@@ -1,0 +1,11 @@
+Dockerfile
+.dockerignore
+*.md
+.gitignore
+.env*
+Makefile
+.github/
+LICENSE
+CHANGELOG.md
+llms.txt
+*_test.go

@@ -1,0 +1,85 @@
+name: CI
+
+# Continuous integration gate for static-server.
+#
+# Runs on every push and pull request. The publish workflow (publish.yml) fires
+# only on version tags; keeping tests green before tagging is the release gate.
+#
+# Jobs: lint (golangci-lint) → test (vet + race) → vuln (govulncheck) →
+#       scan (Trivy filesystem: vulnerabilities + misconfig + secrets).
+# All four must pass. go-version-file keeps the toolchain aligned with go.mod.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# Least privilege: CI only needs to read the repo.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (golangci-lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.13.0
+          args: --timeout=5m
+
+  test:
+    name: Test (vet + race)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go vet
+        run: go vet ./...
+      - name: go test (race + coverage)
+        run: |
+          go test -c -race -cover -o ./testbin .
+          mkdir -p covdir
+          GOCOVERDIR=$PWD/covdir ./testbin -test.gocoverdir=$PWD/covdir -test.v -test.timeout=120s
+          go tool covdata textfmt -i=./covdir -o=coverage.out
+          go tool cover -func=coverage.out
+          rm -f ./testbin
+
+  vuln:
+    name: Vulnerabilities (govulncheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+  scan:
+    name: Filesystem scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true

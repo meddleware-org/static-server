@@ -1,0 +1,115 @@
+# static-server
+
+> Minimal scratch container image serving static files via stdlib Go HTTP.
+> Zero OS footprint (~5 MB), runs as UID 65534 (nobody), no external dependencies.
+
+## Overview
+
+static-server is a single-binary Go HTTP server built into a scratch container image. It serves
+files from a configurable directory (default `/app/public`), prevents directory listing, and
+exposes a `/healthz` probe and `/version` endpoint. Designed for use in Kubernetes via
+ConfigMap volume mounts. Any operator can override content by mounting their own files at
+`SERVE_DIR` without modifying or rebuilding the image.
+
+## Source files
+
+- `main.go` — HTTP server: cascade filesystem, SPA history fallback, cache-control, precompressed asset serving, MIME registration, security headers (+optional CSP), GET/HEAD-only, structured slog logging, graceful shutdown, `/healthz`, `/version`, `-healthcheck` one-shot flag
+- `main_test.go` — unit tests covering all endpoints, middleware, cascade filesystem, and directory-listing prevention
+- `Dockerfile` — multi-stage build (golang:1.26-bookworm builder → scratch runtime); OCI labels injected via ARG; baked-in defaults copied to `/app/default`
+- `go.mod` — module `github.com/meddleware-org/static-server`, Go 1.24, stdlib-only
+- `Makefile` — parameterised build/push/test targets; all registry coordinates and OCI metadata are Make variables
+- `.env.example` — documents all configurable environment variables with defaults
+- `public/index.html` — envsubst template: all identifying values are `${VAR}` placeholders; rendered at build time into `/app/default/index.html`; raw template preserved at `/app/default/index.html.tpl` for initContainer use
+- `public/style.css` — default page stylesheet; served from FALLBACK_DIR; overridable via SERVE_DIR mount
+- `public/script.js` — sets `<link rel="canonical">` dynamically; served from FALLBACK_DIR
+- `public/llms.txt` — machine-readable API reference served from the running container at `/llms.txt`
+- `public/robots.txt` — `Allow: /` for all crawlers
+- `SECURITY.md` — vulnerability reporting policy
+- `CHANGELOG.md` — version history
+- `LICENSE` — BSD Zero Clause (0BSD)
+- `.github/workflows/ci.yml` — CI: go vet + go test on push/PR
+- `.github/workflows/publish.yml` — publish: multi-platform image push on version tag
+
+## Runtime configuration
+
+Environment variables (all optional; defaults shown):
+
+    PORT=8080               TCP port the server listens on
+    SERVE_DIR=/app/public   Primary directory to serve static files from
+    FALLBACK_DIR=/app/default  Fallback directory when a file is not found in SERVE_DIR
+                               (set to empty string to disable the cascade)
+    SPA_FALLBACK=false      Serve index.html (200) for unknown extensionless navigation
+                            routes; asset paths (with an extension) still 404 on miss
+    CACHE_IMMUTABLE_PREFIX= Path prefix whose files get one-year immutable caching
+                            (fingerprinted assets, e.g. /assets/); html/nav get no-cache
+    CONTENT_SECURITY_POLICY=  Value of the Content-Security-Policy header (unset by default)
+    PRECOMPRESSED=false     Serve sibling .br/.gz assets when the client accepts them
+
+## index.html template variables
+
+public/index.html is an envsubst template. All identifying values use ${VAR} placeholders
+substituted at build time (via gettext-base envsubst in the builder stage). The rendered
+file lands at /app/default/index.html; the raw template is preserved at
+/app/default/index.html.tpl for operator use in initContainers.
+
+    SITE_TITLE         Page title, <h1>, og:title, og:site_name, twitter:title, JSON-LD name
+    DESCRIPTION        Meta description, og:description, twitter:description, JSON-LD description
+    SITE_KEYWORDS      Meta keywords
+    VENDOR             Meta author, JSON-LD author name
+    SITE_AUTHOR_URL    JSON-LD author URL
+    OG_URL             og:url (empty default; set via initContainer for social sharing)
+    SOURCE_URL         Source repository URL in body links and JSON-LD codeRepository
+    IMAGE_URL          OCI-label image URL (with https:// scheme); JSON-LD downloadUrl
+    IMAGE_REF          Pull-ready image reference (no scheme); used in docker/k8s examples
+    VERSION            JSON-LD version; matches the binary version string
+    SCHEMA_LICENSE_URL JSON-LD license URL
+
+## HTTP endpoints
+
+    GET /          Serves SERVE_DIR/index.html; falls through to FALLBACK_DIR if absent; 404 if found in neither
+    GET /<path>    Serves file at SERVE_DIR/<path>; falls through to FALLBACK_DIR if not found; 404 if in neither
+    GET /healthz   200 "ok" — liveness/readiness probe
+    GET /version   200 "<version>" — build-time version string as plain text
+    GET /llms.txt  200 — machine-readable API reference (this file, served from FALLBACK_DIR)
+    GET /robots.txt  200 — crawler policy: Allow: /
+
+## Response headers
+
+    X-Content-Type-Options:  nosniff            (always)
+    X-Frame-Options:         SAMEORIGIN         (always)
+    Referrer-Policy:         no-referrer-when-downgrade  (always)
+    Content-Security-Policy: <CONTENT_SECURITY_POLICY>   (only when configured)
+    Cache-Control:           immutable for CACHE_IMMUTABLE_PREFIX; no-cache for html/nav
+    Content-Encoding + Vary: on precompressed hits when PRECOMPRESSED=true
+
+Only GET and HEAD are accepted; other methods return 405 with Allow: GET, HEAD.
+
+## Container properties
+
+    Base image:    scratch (no OS, no shell, no package manager)
+    Run as user:   65534 (nobody)
+    Exposed port:  8080
+    Binary:        /server (statically linked, CGO_ENABLED=0)
+    SERVE_DIR:     /app/public (mount operator content here)
+    FALLBACK_DIR:  /app/default (baked-in defaults: index.html, style.css, script.js, llms.txt, robots.txt)
+    Image size:    ~5 MB
+    License:       0BSD
+
+## Registry
+
+    quay.io/meddleware-org/static-server
+    docker.io/meddleware/static-server
+
+## Publishing (Makefile)
+
+    make build VERSION=v0.1.0           # local single-platform build
+    make build-multi VERSION=v0.1.0     # multi-platform push to all registries
+    make test                            # go test -race ./...
+    make vet                             # go vet ./...
+
+## Links
+
+    Source:        https://github.com/meddleware-org/static-server
+    Issues:        https://github.com/meddleware-org/static-server/issues
+    Changelog:     https://github.com/meddleware-org/static-server/blob/main/CHANGELOG.md
+    Security:      https://github.com/meddleware-org/static-server/blob/main/SECURITY.md

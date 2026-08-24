@@ -1,0 +1,80 @@
+# static-server API reference
+
+> This file is served from the running container at /llms.txt.
+> It describes the runtime API for consumers of the image.
+
+## HTTP endpoints
+
+    GET /          Serves SERVE_DIR/index.html; falls through to FALLBACK_DIR if absent
+                   404 if not found in either filesystem
+    GET /<path>    Serves file at SERVE_DIR/<path>; falls through to FALLBACK_DIR if not found
+                   404 if the path exists in neither filesystem
+                   404 if the path is a directory without an index.html
+    GET /healthz   Returns 200 "ok" — use as liveness/readiness probe
+    GET /version   Returns the build-time version string as plain text (e.g. "v0.1.0")
+    GET /llms.txt  Returns this file
+    GET /robots.txt  Returns crawler policy (Allow: /)
+
+## Configuration
+
+    PORT=8080              TCP port the server listens on (default 8080)
+    SERVE_DIR=/app/public  Primary directory to serve static files from (default /app/public)
+    FALLBACK_DIR=/app/default  Fallback directory when a file is not found in SERVE_DIR
+                               (default /app/default; set to empty string to disable)
+    SPA_FALLBACK=false     Serve index.html (200) for unknown extensionless navigation
+                           routes; asset paths (with an extension) still 404 (default false)
+    CACHE_IMMUTABLE_PREFIX=  Path prefix whose files get one-year immutable caching
+                             (e.g. /assets/); html/nav get no-cache (default empty = off)
+    CONTENT_SECURITY_POLICY=  Content-Security-Policy header value (default unset)
+    PRECOMPRESSED=false    Serve sibling .br/.gz assets when the client accepts them (default false)
+
+## Response headers
+
+    X-Content-Type-Options:  nosniff                       (always)
+    X-Frame-Options:         SAMEORIGIN                    (always)
+    Referrer-Policy:         no-referrer-when-downgrade    (always)
+    Content-Security-Policy: set only when CONTENT_SECURITY_POLICY is configured
+    Cache-Control:           immutable under CACHE_IMMUTABLE_PREFIX; no-cache for html/nav
+    Content-Encoding, Vary:  set on precompressed hits when PRECOMPRESSED=true
+
+## Behaviour
+
+- Methods: only GET and HEAD are accepted; anything else returns 405 with Allow: GET, HEAD.
+- SPA fallback (SPA_FALLBACK=true): an unknown *navigation* route — a GET whose final path
+  segment has no extension — serves index.html with 200, so client-side routing and
+  deep-link refresh work. Asset requests (paths with an extension) still 404 on miss.
+- MIME types: correct types are registered at startup (scratch has no /etc/mime.types),
+  including .wasm → application/wasm, so WebAssembly streaming instantiation works.
+- Cascade filesystem: files are resolved in SERVE_DIR first. If not found, the request
+  falls through to FALLBACK_DIR. This allows partial overlays — mount only the files
+  you want to override in SERVE_DIR and let FALLBACK_DIR supply the rest (e.g. mount
+  only index.html; style.css and script.js are served from the baked-in fallback).
+- Directory listing is disabled. A request for a directory path returns 404
+  unless that directory contains an index.html file (checked in SERVE_DIR first,
+  then FALLBACK_DIR).
+- Graceful shutdown: the server drains in-flight requests for up to 10 seconds
+  on SIGTERM or SIGINT before exiting.
+- The -healthcheck flag runs a one-shot healthcheck (dials /healthz, exits 0/1)
+  instead of starting the server. Used by the Dockerfile HEALTHCHECK instruction.
+
+## Container filesystem layout
+
+    /server             — statically linked server binary
+    /app/public         — SERVE_DIR mount point (empty by default; mount operator content here)
+    /app/default        — FALLBACK_DIR (baked-in default files: index.html, style.css,
+                          script.js, llms.txt, robots.txt)
+
+## Container specification
+
+    Base image:    scratch (no OS, no shell)
+    Run as user:   65534 (nobody)
+    Exposed port:  8080
+    Binary:        /server (statically linked, CGO_ENABLED=0)
+    SERVE_DIR:     /app/public (mount operator content here)
+    FALLBACK_DIR:  /app/default (baked-in defaults; never replaced by operator volumes)
+    Image size:    ~5 MB
+    License:       0BSD
+
+## Source
+
+    https://github.com/meddleware-org/static-server

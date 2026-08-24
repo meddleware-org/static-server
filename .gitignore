@@ -1,0 +1,17 @@
+# Compiled binary
+server
+/static-server
+*.exe
+
+# Test output
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# Local environment overrides
+.env
+
+# OS metadata
+.DS_Store
+Thumbs.db

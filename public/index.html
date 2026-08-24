@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${SITE_TITLE}</title>
+
+    <meta name="description" content="${DESCRIPTION}" />
+    <meta name="keywords" content="${SITE_KEYWORDS}" />
+    <meta name="author" content="${VENDOR}" />
+
+    <!--
+      canonical is set at runtime by script.js (Google executes JS), which covers the
+      default deployment. For social crawlers that cannot execute JS, set OG_URL via the
+      initContainer pattern (see README.md) so og:url is injected at deploy time.
+      OG_URL defaults to empty; an empty og:url tag is harmless and ignored by crawlers.
+    -->
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${SITE_TITLE}" />
+    <meta property="og:description" content="${DESCRIPTION}" />
+    <meta property="og:url" content="${OG_URL}" />
+    <meta property="og:site_name" content="${SITE_TITLE}" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="${SITE_TITLE}" />
+    <meta name="twitter:description" content="${DESCRIPTION}" />
+
+    <!-- Structured data (schema.org SoftwareApplication) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "${SITE_TITLE}",
+      "version": "${VERSION}",
+      "description": "${DESCRIPTION}",
+      "applicationCategory": "WebApplication",
+      "operatingSystem": "Linux",
+      "license": "${SCHEMA_LICENSE_URL}",
+      "codeRepository": "${SOURCE_URL}",
+      "downloadUrl": "${IMAGE_URL}",
+      "programmingLanguage": "Go",
+      "author": {
+        "@type": "Organization",
+        "name": "${VENDOR}",
+        "url": "${SITE_AUTHOR_URL}"
+      }
+    }
+    </script>
+
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/script.js" defer></script>
+  </head>
+  <body>
+    <h1>${SITE_TITLE}</h1>
+    <p>
+      A minimal <a href="${SOURCE_URL}">open-source</a>
+      scratch container image (~5 MB) that serves static files via a fully static Go binary.
+      No OS, no shell, no external dependencies. Runs as UID 65534 (nobody).
+    </p>
+    <p>
+      <span class="tag">PORT</span>
+      <span class="tag">SERVE_DIR</span>
+      <span class="tag">FALLBACK_DIR</span>
+      <span class="tag">GET /healthz</span>
+      <span class="tag">GET /version</span>
+    </p>
+
+    <hr />
+
+    <h2>Deploying your own content</h2>
+    <p>
+      Mount your content at <code>/app/public/</code> (<code>SERVE_DIR</code>). The image ships
+      baked-in default files at <code>/app/default/</code> (<code>FALLBACK_DIR</code>). Files not
+      found in <code>SERVE_DIR</code> automatically fall through to <code>FALLBACK_DIR</code>.
+    </p>
+    <p>
+      This means you can mount <em>only the files you want to override</em>. For example,
+      mounting only <code>index.html</code> via a ConfigMap will still serve the baked-in
+      <code>style.css</code>, <code>script.js</code>, and <code>llms.txt</code> from the fallback
+      — no need to duplicate every file. Mount a full directory to replace all defaults at once.
+    </p>
+    <p>
+      The simplest Kubernetes pattern is a <strong>ConfigMap</strong> — name your entrypoint
+      <code>index.html</code> so the server returns it for <code>/</code>.
+    </p>
+
+    <pre><code># 1. Create a ConfigMap from your HTML file
+kubectl create configmap my-app \
+  --from-file=index.html=my-page.html \
+  -n my-namespace
+
+# 2. Reference it in your Deployment
+spec:
+  volumes:
+    - name: public
+      configMap:
+        name: my-app
+  containers:
+    - name: static-server
+      image: ${IMAGE_REF}:latest
+      ports:
+        - containerPort: 8080
+      readinessProbe:
+        httpGet: { path: /healthz, port: 8080 }
+      livenessProbe:
+        httpGet: { path: /healthz, port: 8080 }
+      volumeMounts:
+        - name: public
+          mountPath: /app/public
+          readOnly: true
+      securityContext:
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities: { drop: [ALL] }</code></pre>
+
+    <h2>Deploying with dynamic metadata (initContainer pattern)</h2>
+    <p>
+      To inject deployment-specific values (canonical URL, <code>og:url</code>, etc.) without
+      making the static server dynamic, run an initContainer that renders a template into a
+      shared <code>emptyDir</code> before the server starts. The static server remains
+      a pure file server; the initContainer handles one-shot configuration.
+    </p>
+    <p>
+      The baked-in template is available at <code>/app/default/index.html.tpl</code>. All
+      identifying values are <code>${VAR}</code> placeholders ready for <code>envsubst</code>.
+    </p>
+
+    <pre><code>spec:
+  initContainers:
+    - name: configure
+      image: alpine:3
+      command:
+        - sh
+        - -c
+        - |
+          apk add --no-cache gettext
+          envsubst &lt; /default/index.html.tpl &gt; /public/index.html
+          cp /default/style.css /default/script.js /default/llms.txt /default/robots.txt /public/
+      env:
+        - name: SITE_TITLE
+          value: "My App"
+        - name: DESCRIPTION
+          value: "My application description."
+        - name: OG_URL
+          value: "https://my-app.example.com/"
+        - name: SOURCE_URL
+          value: "https://github.com/my-org/my-app"
+        - name: VENDOR
+          value: "My Org"
+        - name: SITE_AUTHOR_URL
+          value: "https://my-org.example.com"
+        - name: IMAGE_REF
+          value: "my-registry.example.com/my-org/my-app"
+        - name: IMAGE_URL
+          value: "https://my-registry.example.com/my-org/my-app"
+        - name: SCHEMA_LICENSE_URL
+          value: "https://opensource.org/licenses/MIT"
+        - name: SITE_KEYWORDS
+          value: "my-app, kubernetes, docker"
+        - name: VERSION
+          value: "v1.0.0"
+      volumeMounts:
+        - name: default
+          mountPath: /default
+          readOnly: true
+        - name: public
+          mountPath: /public
+  containers:
+    - name: static-server
+      image: ${IMAGE_REF}:latest
+      volumeMounts:
+        - name: public
+          mountPath: /app/public
+          readOnly: true
+  volumes:
+    - name: default
+      emptyDir: {}              # populated from FALLBACK_DIR by a cp initContainer, or use hostPath
+    - name: public
+      emptyDir: {}              # initContainer writes here; static-server reads it</code></pre>
+
+    <h2>Multi-file sites</h2>
+    <p>
+      Use a ConfigMap with multiple keys for multi-file sites. For build-step content,
+      use an initContainer to populate an emptyDir at startup.
+    </p>
+
+    <pre><code># initContainer pattern — build into /app/public before serving
+spec:
+  initContainers:
+    - name: build
+      image: node:22-alpine
+      command: [sh, -c, "npm ci && npm run build && cp -r dist/* /public/"]
+      volumeMounts:
+        - name: public
+          mountPath: /public
+  containers:
+    - name: static-server
+      image: ${IMAGE_REF}:latest
+      volumeMounts:
+        - name: public
+          mountPath: /app/public
+  volumes:
+    - name: public
+      emptyDir: {}</code></pre>
+
+    <h2>Building and publishing</h2>
+    <pre><code># Using the Makefile (recommended — handles all registries + OCI labels)
+make build VERSION=v0.1.0            # local single-platform build
+make build-multi VERSION=v0.1.0      # multi-platform push to all configured registries
+
+# Override any metadata at build time without editing any file
+make build-multi VERSION=v0.1.0 \
+  SITE_TITLE="My App" \
+  VENDOR="My Org" \
+  SOURCE_URL=https://github.com/my-org/my-app
+
+# Direct docker commands
+docker build \
+  --build-arg VERSION=v0.1.0 \
+  --build-arg SITE_TITLE="My App" \
+  --build-arg VENDOR="My Org" \
+  --build-arg SOURCE_URL=https://github.com/my-org/my-app \
+  --build-arg OG_URL=https://my-app.example.com/ \
+  -t ${IMAGE_REF}:v0.1.0 .</code></pre>
+
+    <hr />
+
+    <h2>API Reference</h2>
+    <p>
+      This section is the authoritative reference for the running server. It is
+      derived directly from <a href="${SOURCE_URL}/blob/main/main.go">main.go</a>
+      and kept in sync with the source. A machine-readable version is available at
+      <a href="/llms.txt">/llms.txt</a>.
+    </p>
+
+    <h3>HTTP Endpoints</h3>
+    <table>
+      <thead>
+        <tr><th>Method</th><th>Path</th><th>Status</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>GET</code></td>
+          <td><code>/</code></td>
+          <td>200 / 404</td>
+          <td>Serves <code>SERVE_DIR/index.html</code>; falls through to <code>FALLBACK_DIR/index.html</code> if absent. Returns 404 if found in neither.</td>
+        </tr>
+        <tr>
+          <td><code>GET</code></td>
+          <td><code>/&lt;path&gt;</code></td>
+          <td>200 / 404</td>
+          <td>Serves the file at <code>SERVE_DIR/&lt;path&gt;</code>; falls through to <code>FALLBACK_DIR/&lt;path&gt;</code> if not found. Returns 404 if the path does not exist in either filesystem, or is a directory without an <code>index.html</code>.</td>
+        </tr>
+        <tr>
+          <td><code>GET</code></td>
+          <td><code>/healthz</code></td>
+          <td>200</td>
+          <td>Liveness and readiness probe. Response body: <code>ok</code>.</td>
+        </tr>
+        <tr>
+          <td><code>GET</code></td>
+          <td><code>/version</code></td>
+          <td>200</td>
+          <td>Build-time version string as plain text (e.g. <code>v0.1.0</code>). Returns <code>dev</code> when built without a version flag.</td>
+        </tr>
+        <tr>
+          <td><code>GET</code></td>
+          <td><code>/llms.txt</code></td>
+          <td>200</td>
+          <td>Machine-readable API reference for AI/LLM agents.</td>
+        </tr>
+        <tr>
+          <td><code>GET</code></td>
+          <td><code>/robots.txt</code></td>
+          <td>200</td>
+          <td>Crawler policy: <code>Allow: /</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Environment Variables</h3>
+    <table>
+      <thead>
+        <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>PORT</code></td>
+          <td><code>8080</code></td>
+          <td>TCP port the server listens on.</td>
+        </tr>
+        <tr>
+          <td><code>SERVE_DIR</code></td>
+          <td><code>/app/public</code></td>
+          <td>Primary filesystem path to serve static files from. Mount a volume or ConfigMap here.</td>
+        </tr>
+        <tr>
+          <td><code>FALLBACK_DIR</code></td>
+          <td><code>/app/default</code></td>
+          <td>Fallback path served when a file is not found in <code>SERVE_DIR</code>. The image bakes default content here (index.html, style.css, script.js, llms.txt, robots.txt). Set to an empty string to disable the cascade entirely.</td>
+        </tr>
+        <tr>
+          <td><code>SPA_FALLBACK</code></td>
+          <td><code>false</code></td>
+          <td>Serve <code>index.html</code> (200) for unknown <em>navigation</em> routes (extensionless paths), enabling client-side routing and deep-link refresh. Asset requests (paths with an extension) still return 404 on miss.</td>
+        </tr>
+        <tr>
+          <td><code>CACHE_IMMUTABLE_PREFIX</code></td>
+          <td>(empty)</td>
+          <td>Path prefix whose files get <code>Cache-Control: public, max-age=31536000, immutable</code> (fingerprinted assets, e.g. <code>/assets/</code>). <code>index.html</code> and navigation routes get <code>no-cache</code>. Empty disables immutable caching.</td>
+        </tr>
+        <tr>
+          <td><code>CONTENT_SECURITY_POLICY</code></td>
+          <td>(unset)</td>
+          <td>When set, adds the <code>Content-Security-Policy</code> response header with this value.</td>
+        </tr>
+        <tr>
+          <td><code>PRECOMPRESSED</code></td>
+          <td><code>false</code></td>
+          <td>Serve a sibling <code>.br</code>/<code>.gz</code> asset when the client accepts that encoding and the file exists, preserving the original <code>Content-Type</code>.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>index.html Template Variables</h3>
+    <p>
+      The baked-in <code>index.html</code> is rendered from a template at build time. All
+      identifying values are individually overridable via <code>--build-arg</code> (or Make
+      variables) without editing any file. The raw template is available at
+      <code>/app/default/index.html.tpl</code> for initContainer use.
+    </p>
+    <table>
+      <thead>
+        <tr><th>Variable</th><th>Default</th><th>Used in</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>SITE_TITLE</code></td><td><code>static-server</code></td><td><code>&lt;title&gt;</code>, <code>&lt;h1&gt;</code>, og:title, og:site_name, twitter:title, JSON-LD name</td></tr>
+        <tr><td><code>DESCRIPTION</code></td><td>(see Dockerfile)</td><td>meta description, og:description, twitter:description, JSON-LD description</td></tr>
+        <tr><td><code>SITE_KEYWORDS</code></td><td>(see Dockerfile)</td><td>meta keywords</td></tr>
+        <tr><td><code>VENDOR</code></td><td><code>Meddleware</code></td><td>meta author, JSON-LD author name</td></tr>
+        <tr><td><code>SITE_AUTHOR_URL</code></td><td><code>https://meddleware.co.uk</code></td><td>JSON-LD author URL</td></tr>
+        <tr><td><code>OG_URL</code></td><td><code></code> (empty)</td><td>og:url (set to your deployment URL via initContainer)</td></tr>
+        <tr><td><code>SOURCE_URL</code></td><td><code>https://github.com/meddleware-org/static-server</code></td><td>body links, JSON-LD codeRepository, API ref link</td></tr>
+        <tr><td><code>IMAGE_URL</code></td><td><code>https://quay.io/meddleware-org/static-server</code></td><td>JSON-LD downloadUrl (OCI label URL with https scheme)</td></tr>
+        <tr><td><code>IMAGE_REF</code></td><td><code>quay.io/meddleware-org/static-server</code></td><td>docker run commands and Kubernetes YAML examples</td></tr>
+        <tr><td><code>VERSION</code></td><td><code>dev</code></td><td>JSON-LD version</td></tr>
+        <tr><td><code>SCHEMA_LICENSE_URL</code></td><td><code>https://opensource.org/licenses/0BSD</code></td><td>JSON-LD license</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Response Headers</h3>
+    <p>The first three security headers are emitted on every response; the rest are conditional:</p>
+    <table>
+      <thead>
+        <tr><th>Header</th><th>Value</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>X-Content-Type-Options</code></td><td><code>nosniff</code> (always)</td></tr>
+        <tr><td><code>X-Frame-Options</code></td><td><code>SAMEORIGIN</code> (always)</td></tr>
+        <tr><td><code>Referrer-Policy</code></td><td><code>no-referrer-when-downgrade</code> (always)</td></tr>
+        <tr><td><code>Content-Security-Policy</code></td><td>value of <code>CONTENT_SECURITY_POLICY</code> (only when set)</td></tr>
+        <tr><td><code>Cache-Control</code></td><td><code>immutable</code> under <code>CACHE_IMMUTABLE_PREFIX</code>; <code>no-cache</code> for html/navigation</td></tr>
+        <tr><td><code>Content-Encoding</code>, <code>Vary</code></td><td>on precompressed hits when <code>PRECOMPRESSED=true</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3>Behaviour</h3>
+    <ul>
+      <li><strong>Methods.</strong> Only <code>GET</code> and <code>HEAD</code> are accepted; any other method returns <code>405</code> with <code>Allow: GET, HEAD</code>.</li>
+      <li><strong>SPA fallback</strong> (<code>SPA_FALLBACK=true</code>). An unknown navigation route — a GET whose final path segment has no extension — serves <code>index.html</code> with 200, so client-side routing and deep-link refresh work. Asset requests (paths with an extension) still 404 on miss, so a broken build is not masked.</li>
+      <li><strong>Correct MIME types.</strong> Types are registered at startup (scratch images have no <code>/etc/mime.types</code>), including <code>.wasm</code> → <code>application/wasm</code> so WebAssembly streaming instantiation works.</li>
+      <li><strong>Cascade filesystem.</strong> Files are resolved in <code>SERVE_DIR</code> first. If not found, the request falls through to <code>FALLBACK_DIR</code>. This enables partial overlays — mount only the files you want to customise in <code>SERVE_DIR</code> and let <code>FALLBACK_DIR</code> supply the rest.</li>
+      <li><strong>Directory listing is disabled.</strong> A request for a directory path returns 404 unless that directory contains an <code>index.html</code> file (checked in <code>SERVE_DIR</code> first, then <code>FALLBACK_DIR</code>).</li>
+      <li><strong>Graceful shutdown.</strong> On <code>SIGTERM</code> or <code>SIGINT</code>, the server stops accepting new connections and drains in-flight requests for up to 10 seconds before exiting.</li>
+      <li><strong>Request timeouts.</strong> <code>ReadTimeout</code> 15 s, <code>WriteTimeout</code> 30 s, <code>IdleTimeout</code> 60 s.</li>
+    </ul>
+
+    <h3>Container Specification</h3>
+    <table>
+      <thead>
+        <tr><th>Property</th><th>Value</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Base image</td><td>scratch (zero OS footprint — no shell, no package manager)</td></tr>
+        <tr><td>Run as user</td><td>65534 (nobody)</td></tr>
+        <tr><td>Exposed port</td><td>8080</td></tr>
+        <tr><td>Binary</td><td><code>/server</code> (statically linked, <code>CGO_ENABLED=0</code>)</td></tr>
+        <tr><td>SERVE_DIR (mount point)</td><td><code>/app/public</code> (empty by default; mount operator content here)</td></tr>
+        <tr><td>FALLBACK_DIR (baked-in defaults)</td><td><code>/app/default</code> (index.html, style.css, script.js, llms.txt, robots.txt, index.html.tpl)</td></tr>
+        <tr><td>Image size</td><td>~5 MB</td></tr>
+        <tr><td>Platforms</td><td>linux/amd64, linux/arm64</td></tr>
+        <tr><td>License</td><td>BSD Zero Clause (0BSD)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>OCI Image Spec Labels</h3>
+    <p>
+      All <code>org.opencontainers.image.*</code> labels are configurable at build time
+      via <code>--build-arg</code>. Inspect with <code>docker inspect &lt;image&gt;</code>.
+    </p>
+    <table>
+      <thead>
+        <tr><th>Label</th><th>Default value</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>title</code></td><td>static-server</td></tr>
+        <tr><td><code>description</code></td><td>Minimal scratch container image serving static files via stdlib Go HTTP.</td></tr>
+        <tr><td><code>url</code></td><td>https://quay.io/meddleware-org/static-server</td></tr>
+        <tr><td><code>source</code></td><td>https://github.com/meddleware-org/static-server</td></tr>
+        <tr><td><code>documentation</code></td><td>https://github.com/meddleware-org/static-server#readme</td></tr>
+        <tr><td><code>vendor</code></td><td>Meddleware</td></tr>
+        <tr><td><code>licenses</code></td><td>0BSD</td></tr>
+        <tr><td><code>version</code></td><td>(injected at build time, e.g. v0.1.0)</td></tr>
+      </tbody>
+    </table>
+
+    <hr />
+    <p class="footnote">
+      ${SITE_TITLE} &mdash; scratch image, fully static Go binary, ~5 MB &mdash;
+      <a href="${SOURCE_URL}">source</a> &mdash;
+      <a href="${SOURCE_URL}/blob/main/LICENSE">0BSD</a>
+    </p>
+  </body>
+</html>
