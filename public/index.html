@@ -360,7 +360,7 @@ docker build \
       <tbody>
         <tr><td><code>X-Content-Type-Options</code></td><td><code>nosniff</code> (always)</td></tr>
         <tr><td><code>X-Frame-Options</code></td><td><code>SAMEORIGIN</code> (always)</td></tr>
-        <tr><td><code>Referrer-Policy</code></td><td><code>no-referrer-when-downgrade</code> (always)</td></tr>
+        <tr><td><code>Referrer-Policy</code></td><td><code>strict-origin-when-cross-origin</code> (always)</td></tr>
         <tr><td><code>Content-Security-Policy</code></td><td>value of <code>CONTENT_SECURITY_POLICY</code> (only when set)</td></tr>
         <tr><td><code>Cache-Control</code></td><td><code>immutable</code> under <code>CACHE_IMMUTABLE_PREFIX</code>; <code>no-cache</code> for html/navigation</td></tr>
         <tr><td><code>Content-Encoding</code>, <code>Vary</code></td><td>on precompressed hits when <code>PRECOMPRESSED=true</code></td></tr>

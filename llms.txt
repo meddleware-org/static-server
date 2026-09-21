@@ -77,7 +77,7 @@ file lands at /app/default/index.html; the raw template is preserved at
 
     X-Content-Type-Options:  nosniff            (always)
     X-Frame-Options:         SAMEORIGIN         (always)
-    Referrer-Policy:         no-referrer-when-downgrade  (always)
+    Referrer-Policy:         strict-origin-when-cross-origin  (always)
     Content-Security-Policy: <CONTENT_SECURITY_POLICY>   (only when configured)
     Cache-Control:           immutable for CACHE_IMMUTABLE_PREFIX; no-cache for html/nav
     Content-Encoding + Vary: on precompressed hits when PRECOMPRESSED=true

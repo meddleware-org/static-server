@@ -25,6 +25,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Tightened default `Referrer-Policy` from `no-referrer-when-downgrade` to
+  `strict-origin-when-cross-origin`. The new value sends only the origin (no path) on
+  cross-origin navigations, which is the W3C-recommended default. No behaviour change
+  for same-origin navigation or HTTPS→HTTPS cross-origin requests where the full URL
+  was not meaningful.
 - Request/lifecycle logging now uses `log/slog` (structured JSON) instead of `log.Printf`.
 - The handler stack is now built by a shared `newHandler(config, fs)` in `main.go`, used by
   both the server and the tests (previously duplicated in the test file).

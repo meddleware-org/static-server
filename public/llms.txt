@@ -32,7 +32,7 @@
 
     X-Content-Type-Options:  nosniff                       (always)
     X-Frame-Options:         SAMEORIGIN                    (always)
-    Referrer-Policy:         no-referrer-when-downgrade    (always)
+    Referrer-Policy:         strict-origin-when-cross-origin  (always)
     Content-Security-Policy: set only when CONTENT_SECURITY_POLICY is configured
     Cache-Control:           immutable under CACHE_IMMUTABLE_PREFIX; no-cache for html/nav
     Content-Encoding, Vary:  set on precompressed hits when PRECOMPRESSED=true
