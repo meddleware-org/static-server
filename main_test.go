@@ -202,7 +202,7 @@ func TestSecurityHeaders(t *testing.T) {
 	for header, want := range map[string]string{
 		"X-Content-Type-Options": "nosniff",
 		"X-Frame-Options":        "SAMEORIGIN",
-		"Referrer-Policy":        "no-referrer-when-downgrade",
+		"Referrer-Policy":        "strict-origin-when-cross-origin",
 	} {
 		if got := resp.Header.Get(header); got != want {
 			t.Errorf("%s: got %q, want %q", header, got, want)

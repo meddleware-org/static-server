@@ -8,6 +8,7 @@ server
 *.out
 coverage.html
 coverage.txt
+testbin
 
 # Local environment overrides
 .env
