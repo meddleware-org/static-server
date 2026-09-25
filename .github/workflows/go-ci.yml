@@ -1,4 +1,4 @@
-name: CI
+name: Go CI
 
 # Continuous integration gate for static-server.
 #
