@@ -383,6 +383,56 @@ func TestCSP(t *testing.T) {
 	}
 }
 
+// TestSecurityHeaderDefaults verifies HSTS and Permissions-Policy come from the environment with
+// the documented defaults, and that setting a variable to "" switches its header off.
+func TestSecurityHeaderDefaults(t *testing.T) {
+	t.Setenv("STRICT_TRANSPORT_SECURITY", "")
+	os.Unsetenv("STRICT_TRANSPORT_SECURITY") // absent → default
+	os.Unsetenv("PERMISSIONS_POLICY")
+	cfg := loadConfig()
+	if cfg.HSTS != defaultHSTS || cfg.Permissions != defaultPermissionsPolicy {
+		t.Fatalf("defaults: got HSTS %q, Permissions %q", cfg.HSTS, cfg.Permissions)
+	}
+
+	t.Setenv("STRICT_TRANSPORT_SECURITY", "")
+	t.Setenv("PERMISSIONS_POLICY", "camera=()")
+	cfg = loadConfig()
+	if cfg.HSTS != "" || cfg.Permissions != "camera=()" {
+		t.Fatalf("overrides: got HSTS %q, Permissions %q", cfg.HSTS, cfg.Permissions)
+	}
+}
+
+// TestSecurityHeadersSent verifies the configured HSTS and Permissions-Policy values reach the
+// response, and that empty values send no header.
+func TestSecurityHeadersSent(t *testing.T) {
+	srv, dir := newConfiguredServer(t, config{HSTS: defaultHSTS, Permissions: defaultPermissionsPolicy})
+	defer srv.Close()
+	_ = os.WriteFile(dir+"/index.html", []byte("x"), 0o644)
+	resp, err := http.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if got := resp.Header.Get("Strict-Transport-Security"); got != defaultHSTS {
+		t.Errorf("HSTS: got %q", got)
+	}
+	if got := resp.Header.Get("Permissions-Policy"); got != defaultPermissionsPolicy {
+		t.Errorf("Permissions-Policy: got %q", got)
+	}
+
+	off, offDir := newConfiguredServer(t, config{})
+	defer off.Close()
+	_ = os.WriteFile(offDir+"/index.html", []byte("x"), 0o644)
+	resp2, err := http.Get(off.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp2.Body.Close()
+	if resp2.Header.Get("Strict-Transport-Security") != "" || resp2.Header.Get("Permissions-Policy") != "" {
+		t.Errorf("empty config must send neither header")
+	}
+}
+
 // TestMethodNotAllowed verifies non-GET/HEAD methods get 405 with an Allow header.
 func TestMethodNotAllowed(t *testing.T) {
 	srv, _ := newTestServer(t)

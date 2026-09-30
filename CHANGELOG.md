@@ -8,6 +8,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `STRICT_TRANSPORT_SECURITY` (default `max-age=31536000; includeSubDomains`) and
+  `PERMISSIONS_POLICY` (default `camera=(), geolocation=(), microphone=(), payment=()`) security
+  headers; setting either variable to an empty string omits its header.
+
 - SPA hosting: `SPA_FALLBACK` (default `false`) serves `index.html` (200) for unknown
   navigation routes (extensionless paths) so client-side routing and deep-link refresh
   work; asset requests (paths with an extension) still 404 so broken builds are not masked.

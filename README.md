@@ -40,6 +40,8 @@ docker.io/meddleware/static-server:v0.1.0
 | `SPA_FALLBACK` | `false` | Serve `index.html` (200) for unknown navigation routes (extensionless paths); asset paths still 404 on miss |
 | `CACHE_IMMUTABLE_PREFIX` | (empty) | Path prefix whose files get one-year immutable `Cache-Control` (fingerprinted assets, e.g. `/assets/`); html/nav get `no-cache` |
 | `CONTENT_SECURITY_POLICY` | (unset) | Sets the `Content-Security-Policy` header when provided |
+| `STRICT_TRANSPORT_SECURITY` | `max-age=31536000; includeSubDomains` | `Strict-Transport-Security` value; set to empty to omit the header |
+| `PERMISSIONS_POLICY` | `camera=(), geolocation=(), microphone=(), payment=()` | `Permissions-Policy` value; set to empty to omit the header |
 | `PRECOMPRESSED` | `false` | Serve a sibling `.br`/`.gz` asset when the client accepts it and it exists |
 
 See [`.env.example`](.env.example) for a copy-paste template.

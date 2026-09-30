@@ -26,6 +26,11 @@
 //	SPA_FALLBACK            serve index.html for unknown navigation routes (default: false)
 //	CACHE_IMMUTABLE_PREFIX  path prefix whose files get long immutable caching (default: "" = off)
 //	CONTENT_SECURITY_POLICY value of the Content-Security-Policy header (default: "" = unset)
+//	STRICT_TRANSPORT_SECURITY value of the Strict-Transport-Security header
+//	                        (default: "max-age=31536000; includeSubDomains"; set to "" to omit)
+//	PERMISSIONS_POLICY      value of the Permissions-Policy header
+//	                        (default: "camera=(), geolocation=(), microphone=(), payment=()";
+//	                        set to "" to omit)
 //	PRECOMPRESSED           serve sibling .br/.gz assets when accepted (default: false)
 //
 // # One-shot healthcheck mode
@@ -56,6 +61,15 @@ import (
 //	-ldflags "-X main.version=v0.1.0"
 var version = "dev"
 
+// Default security headers. HSTS: one year, subdomains included (every *.meddleware.co.uk host is
+// HTTPS-only behind Cloudflare); no `preload` — joining the preload list is an irreversible,
+// operator-level decision. Permissions-Policy: none of these apps use the camera, location,
+// microphone or payment APIs, so deny them to every frame.
+const (
+	defaultHSTS              = "max-age=31536000; includeSubDomains"
+	defaultPermissionsPolicy = "camera=(), geolocation=(), microphone=(), payment=()"
+)
+
 // config holds the runtime configuration loaded from the environment. It is built
 // once in main (or per-test) and threaded through newHandler into the middlewares.
 type config struct {
@@ -65,6 +79,8 @@ type config struct {
 	SPAFallback     bool   // serve index.html for unknown navigation routes
 	ImmutablePrefix string // path prefix whose files get immutable caching ("" = off)
 	CSP             string // Content-Security-Policy header value ("" = unset)
+	HSTS            string // Strict-Transport-Security header value ("" = unset)
+	Permissions     string // Permissions-Policy header value ("" = unset)
 	Precompressed   bool   // serve sibling .br/.gz assets when the client accepts them
 }
 
@@ -78,6 +94,8 @@ func loadConfig() config {
 		SPAFallback:     envBool("SPA_FALLBACK", false),
 		ImmutablePrefix: envOr("CACHE_IMMUTABLE_PREFIX", ""),
 		CSP:             envOr("CONTENT_SECURITY_POLICY", ""),
+		HSTS:            envOrEmpty("STRICT_TRANSPORT_SECURITY", defaultHSTS),
+		Permissions:     envOrEmpty("PERMISSIONS_POLICY", defaultPermissionsPolicy),
 		Precompressed:   envBool("PRECOMPRESSED", false),
 	}
 }
@@ -429,7 +447,8 @@ func (d safeDir) Open(name string) (http.File, error) {
 // secureHeaders is an HTTP middleware that sets conservative security response
 // headers on every response, regardless of status code or the downstream handler.
 // It always sets X-Content-Type-Options, X-Frame-Options, and Referrer-Policy, and
-// additionally sets Content-Security-Policy when cfg.CSP is non-empty.
+// additionally sets Content-Security-Policy, Strict-Transport-Security and
+// Permissions-Policy when their configured values are non-empty.
 func secureHeaders(cfg config, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -437,6 +456,12 @@ func secureHeaders(cfg config, next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		if cfg.CSP != "" {
 			w.Header().Set("Content-Security-Policy", cfg.CSP)
+		}
+		if cfg.HSTS != "" {
+			w.Header().Set("Strict-Transport-Security", cfg.HSTS)
+		}
+		if cfg.Permissions != "" {
+			w.Header().Set("Permissions-Policy", cfg.Permissions)
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -475,6 +500,16 @@ func logRequest(next http.Handler) http.Handler {
 // variable is unset or empty, envOr returns the provided fallback value.
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// envOrEmpty returns the value of the environment variable named by key when it is set — even to
+// the empty string, which an operator uses to switch a default header off — and fallback only when
+// the variable is absent.
+func envOrEmpty(key, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok {
 		return v
 	}
 	return fallback
