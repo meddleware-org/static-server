@@ -427,9 +427,9 @@ func TestCSP(t *testing.T) {
 // the documented defaults, and that setting a variable to "" switches its header off.
 func TestSecurityHeaderDefaults(t *testing.T) {
 	t.Setenv("STRICT_TRANSPORT_SECURITY", "")
-	os.Unsetenv("STRICT_TRANSPORT_SECURITY") // absent → default
-	os.Unsetenv("PERMISSIONS_POLICY")
-	os.Unsetenv("CSP_NONCE")
+	_ = os.Unsetenv("STRICT_TRANSPORT_SECURITY") // absent → default
+	_ = os.Unsetenv("PERMISSIONS_POLICY")
+	_ = os.Unsetenv("CSP_NONCE")
 	cfg := loadConfig()
 	if !cfg.CSPNonce {
 		t.Fatal("CSP_NONCE should default to true")
