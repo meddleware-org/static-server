@@ -43,6 +43,7 @@ Environment variables (all optional; defaults shown):
     CACHE_IMMUTABLE_PREFIX= Path prefix whose files get one-year immutable caching
                             (fingerprinted assets, e.g. /assets/); html/nav get no-cache
     CONTENT_SECURITY_POLICY=  Value of the Content-Security-Policy header (unset by default)
+    CSP_NONCE=true            Append a fresh 'nonce-…' to the CSP's script-src on every response
     STRICT_TRANSPORT_SECURITY=  Strict-Transport-Security value (default max-age=31536000; includeSubDomains; empty omits)
     PERMISSIONS_POLICY=  Permissions-Policy value (default camera=(), geolocation=(), microphone=(), payment=(); empty omits)
     PRECOMPRESSED=false     Serve sibling .br/.gz assets when the client accepts them

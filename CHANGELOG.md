@@ -4,10 +4,14 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.1.3] - 2026-10-01
 
 ### Added
 
+- `CSP_NONCE` (default `true`): a fresh 128-bit `'nonce-…'` is appended to the CSP's `script-src` on
+  every response. Cloudflare reads it and tags the inline script that JavaScript Detections (always
+  on with Bot Fight Mode) injects, which a strict `script-src` otherwise blocks — without allowing
+  `'unsafe-inline'`. Policies without `script-src` are unchanged.
 - `STRICT_TRANSPORT_SECURITY` (default `max-age=31536000; includeSubDomains`) and
   `PERMISSIONS_POLICY` (default `camera=(), geolocation=(), microphone=(), payment=()`) security
   headers; setting either variable to an empty string omits its header.

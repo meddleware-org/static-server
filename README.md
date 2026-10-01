@@ -40,6 +40,7 @@ docker.io/meddleware/static-server:v0.1.0
 | `SPA_FALLBACK` | `false` | Serve `index.html` (200) for unknown navigation routes (extensionless paths); asset paths still 404 on miss |
 | `CACHE_IMMUTABLE_PREFIX` | (empty) | Path prefix whose files get one-year immutable `Cache-Control` (fingerprinted assets, e.g. `/assets/`); html/nav get `no-cache` |
 | `CONTENT_SECURITY_POLICY` | (unset) | Sets the `Content-Security-Policy` header when provided |
+| `CSP_NONCE` | `true` | Appends a fresh `'nonce-…'` to the policy's `script-src` on every response. The server inlines no scripts; the nonce lets an edge that injects scripts and reads the nonce from this header (Cloudflare JavaScript Detections / Bot Fight Mode) run them without `'unsafe-inline'`. A policy without `script-src` is left unchanged. |
 | `STRICT_TRANSPORT_SECURITY` | `max-age=31536000; includeSubDomains` | `Strict-Transport-Security` value; set to empty to omit the header |
 | `PERMISSIONS_POLICY` | `camera=(), geolocation=(), microphone=(), payment=()` | `Permissions-Policy` value; set to empty to omit the header |
 | `PRECOMPRESSED` | `false` | Serve a sibling `.br`/`.gz` asset when the client accepts it and it exists |

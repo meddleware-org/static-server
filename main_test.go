@@ -357,6 +357,46 @@ func TestCacheControl(t *testing.T) {
 
 // TestCSP verifies the Content-Security-Policy header is set when configured and
 // absent otherwise.
+func TestCSPNonce(t *testing.T) {
+	csp := "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'"
+	srv, dir := newConfiguredServer(t, config{CSP: csp, CSPNonce: true})
+	defer srv.Close()
+	_ = os.WriteFile(dir+"/index.html", []byte("x"), 0o644)
+	seen := map[string]bool{}
+	for range 3 {
+		resp, err := http.Get(srv.URL + "/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		got := resp.Header.Get("Content-Security-Policy")
+		prefix := "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'nonce-"
+		if !strings.HasPrefix(got, prefix) || !strings.HasSuffix(got, "'; style-src 'self'") {
+			t.Fatalf("CSP: got %q", got)
+		}
+		nonce := strings.TrimSuffix(strings.TrimPrefix(got, prefix), "'; style-src 'self'")
+		if len(nonce) != 24 || seen[nonce] {
+			t.Fatalf("nonce %q: want a fresh 16-byte base64 value per response", nonce)
+		}
+		seen[nonce] = true
+	}
+}
+
+func TestWithScriptNonce(t *testing.T) {
+	cases := map[string]string{
+		"default-src 'self'":                         "default-src 'self'",
+		"default-src 'self'; script-src 'self'":      "default-src 'self'; script-src 'self' 'nonce-N'",
+		"script-src 'self' ; object-src 'none'":      "script-src 'self' 'nonce-N'; object-src 'none'",
+		"default-src 'self'; Script-Src 'self'":      "default-src 'self'; Script-Src 'self' 'nonce-N'",
+		"default-src 'self'; script-src-elem 'self'": "default-src 'self'; script-src-elem 'self'",
+	}
+	for in, want := range cases {
+		if got := withScriptNonce(in, "N"); got != want {
+			t.Errorf("withScriptNonce(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestCSP(t *testing.T) {
 	srv, dir := newConfiguredServer(t, config{CSP: "default-src 'self'"})
 	defer srv.Close()
@@ -389,7 +429,11 @@ func TestSecurityHeaderDefaults(t *testing.T) {
 	t.Setenv("STRICT_TRANSPORT_SECURITY", "")
 	os.Unsetenv("STRICT_TRANSPORT_SECURITY") // absent → default
 	os.Unsetenv("PERMISSIONS_POLICY")
+	os.Unsetenv("CSP_NONCE")
 	cfg := loadConfig()
+	if !cfg.CSPNonce {
+		t.Fatal("CSP_NONCE should default to true")
+	}
 	if cfg.HSTS != defaultHSTS || cfg.Permissions != defaultPermissionsPolicy {
 		t.Fatalf("defaults: got HSTS %q, Permissions %q", cfg.HSTS, cfg.Permissions)
 	}

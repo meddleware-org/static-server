@@ -26,6 +26,9 @@
 //	SPA_FALLBACK            serve index.html for unknown navigation routes (default: false)
 //	CACHE_IMMUTABLE_PREFIX  path prefix whose files get long immutable caching (default: "" = off)
 //	CONTENT_SECURITY_POLICY value of the Content-Security-Policy header (default: "" = unset)
+//	CSP_NONCE               add a fresh 'nonce-…' to the CSP's script-src on every response, so an
+//	                        edge (e.g. Cloudflare JavaScript Detections) can mark the inline scripts
+//	                        it injects; the app's own scripts stay governed by 'self' (default: true)
 //	STRICT_TRANSPORT_SECURITY value of the Strict-Transport-Security header
 //	                        (default: "max-age=31536000; includeSubDomains"; set to "" to omit)
 //	PERMISSIONS_POLICY      value of the Permissions-Policy header
@@ -42,6 +45,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"io"
 	"log/slog"
@@ -79,6 +84,7 @@ type config struct {
 	SPAFallback     bool   // serve index.html for unknown navigation routes
 	ImmutablePrefix string // path prefix whose files get immutable caching ("" = off)
 	CSP             string // Content-Security-Policy header value ("" = unset)
+	CSPNonce        bool   // add a per-response nonce to the CSP's script-src
 	HSTS            string // Strict-Transport-Security header value ("" = unset)
 	Permissions     string // Permissions-Policy header value ("" = unset)
 	Precompressed   bool   // serve sibling .br/.gz assets when the client accepts them
@@ -94,6 +100,7 @@ func loadConfig() config {
 		SPAFallback:     envBool("SPA_FALLBACK", false),
 		ImmutablePrefix: envOr("CACHE_IMMUTABLE_PREFIX", ""),
 		CSP:             envOr("CONTENT_SECURITY_POLICY", ""),
+		CSPNonce:        envBool("CSP_NONCE", true),
 		HSTS:            envOrEmpty("STRICT_TRANSPORT_SECURITY", defaultHSTS),
 		Permissions:     envOrEmpty("PERMISSIONS_POLICY", defaultPermissionsPolicy),
 		Precompressed:   envBool("PRECOMPRESSED", false),
@@ -455,7 +462,11 @@ func secureHeaders(cfg config, next http.Handler) http.Handler {
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		if cfg.CSP != "" {
-			w.Header().Set("Content-Security-Policy", cfg.CSP)
+			csp := cfg.CSP
+			if cfg.CSPNonce {
+				csp = withScriptNonce(csp, newNonce())
+			}
+			w.Header().Set("Content-Security-Policy", csp)
 		}
 		if cfg.HSTS != "" {
 			w.Header().Set("Strict-Transport-Security", cfg.HSTS)
@@ -465,6 +476,32 @@ func secureHeaders(cfg config, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// newNonce returns 128 random bits, base64-encoded, for a CSP nonce. A failing system RNG is
+// unrecoverable for a server that issues nonces, so it panics (net/http turns that into a 500).
+func newNonce() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic("csp nonce: " + err.Error())
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// withScriptNonce appends 'nonce-<nonce>' to the policy's script-src directive. A policy without
+// script-src is returned unchanged: adding one would replace the default-src fallback for scripts.
+// The nonce only lets markup carrying it run; this server never inlines scripts itself, so it serves
+// edges that inject scripts and parse the nonce from this header (Cloudflare does).
+func withScriptNonce(csp, nonce string) string {
+	parts := strings.Split(csp, ";")
+	for i, p := range parts {
+		fields := strings.Fields(p)
+		if len(fields) > 0 && strings.EqualFold(fields[0], "script-src") {
+			parts[i] = strings.TrimRight(p, " ") + " 'nonce-" + nonce + "'"
+			return strings.Join(parts, ";")
+		}
+	}
+	return csp
 }
 
 // responseWriter wraps http.ResponseWriter to capture the HTTP status code written
