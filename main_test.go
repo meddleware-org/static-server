@@ -843,3 +843,30 @@ func TestNotFoundPage(t *testing.T) {
 		t.Errorf("SPA precedence: got %d %q, want 200 app", code, body)
 	}
 }
+
+// TestTraversalRejected verifies that encoded and literal parent-directory segments never
+// reach a file outside the serve root, with or without the navigation fallbacks.
+func TestTraversalRejected(t *testing.T) {
+	parent := t.TempDir()
+	root := parent + "/root"
+	_ = os.MkdirAll(root, 0o755)
+	_ = os.WriteFile(parent+"/secret.txt", []byte("outside root"), 0o644)
+	_ = os.WriteFile(root+"/index.html", []byte("home"), 0o644)
+	for _, cfg := range []config{{}, {SPAFallback: true}, {CleanURLs: true, NotFoundPage: "/index.html"}} {
+		srv := httptest.NewServer(newHandler(cfg, cascadeFS{http.Dir(root)}))
+		for _, p := range []string{"/../secret.txt", "/..%2fsecret.txt", "/%2e%2e/secret.txt", "/..%2f..%2fsecret", "/.%2e/secret.txt"} {
+			req, _ := http.NewRequest(http.MethodGet, srv.URL+p, nil)
+			req.URL.Opaque = p // send the path exactly as written
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if strings.Contains(string(body), "outside root") {
+				t.Errorf("cfg %+v: %s served a file outside the root", cfg, p)
+			}
+		}
+		srv.Close()
+	}
+}
