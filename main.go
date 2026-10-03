@@ -24,6 +24,10 @@
 //	SERVE_DIR               primary serve directory (default: /app/public)
 //	FALLBACK_DIR            fallback directory; empty disables the cascade (default: /app/default)
 //	SPA_FALLBACK            serve index.html for unknown navigation routes (default: false)
+//	CLEAN_URLS              serve /<path> from /<path>.html when /<path> itself does not exist, for
+//	                        static-site generators that link extensionless URLs (default: false)
+//	NOT_FOUND_PAGE          page served with status 404 for unknown navigation routes, e.g.
+//	                        /404.html (default: "" = plain 404; ignored when SPA_FALLBACK is on)
 //	CACHE_IMMUTABLE_PREFIX  path prefix whose files get long immutable caching (default: "" = off)
 //	CONTENT_SECURITY_POLICY value of the Content-Security-Policy header (default: "" = unset)
 //	CSP_NONCE               add a fresh 'nonce-…' to the CSP's script-src on every response, so an
@@ -82,6 +86,8 @@ type config struct {
 	ServeDir        string // primary serve directory
 	FallbackDir     string // fallback directory ("" disables the cascade)
 	SPAFallback     bool   // serve index.html for unknown navigation routes
+	CleanURLs       bool   // serve /<path> from /<path>.html when /<path> does not exist
+	NotFoundPage    string // page served with 404 for unknown navigation routes ("" = plain 404)
 	ImmutablePrefix string // path prefix whose files get immutable caching ("" = off)
 	CSP             string // Content-Security-Policy header value ("" = unset)
 	CSPNonce        bool   // add a per-response nonce to the CSP's script-src
@@ -98,6 +104,8 @@ func loadConfig() config {
 		ServeDir:        envOr("SERVE_DIR", "/app/public"),
 		FallbackDir:     envOr("FALLBACK_DIR", ""),
 		SPAFallback:     envBool("SPA_FALLBACK", false),
+		CleanURLs:       envBool("CLEAN_URLS", false),
+		NotFoundPage:    envOr("NOT_FOUND_PAGE", ""),
 		ImmutablePrefix: envOr("CACHE_IMMUTABLE_PREFIX", ""),
 		CSP:             envOr("CONTENT_SECURITY_POLICY", ""),
 		CSPNonce:        envBool("CSP_NONCE", true),
@@ -251,21 +259,31 @@ func fileHandler(cfg config, fs http.FileSystem) http.Handler {
 			return
 		}
 
-		if cfg.SPAFallback && isNavigation(r) && !exists(sfs, r.URL.Path) {
-			serveIndex(w, r, fs)
-			return
+		if isNavigation(r) && !exists(sfs, r.URL.Path) {
+			// A generated page for the clean URL wins over every fallback.
+			if cfg.CleanURLs && !strings.HasSuffix(r.URL.Path, "/") &&
+				serveFileContent(w, r, fs, path.Clean(r.URL.Path)+".html") {
+				return
+			}
+			if cfg.SPAFallback {
+				serveIndex(w, r, fs)
+				return
+			}
+			if cfg.NotFoundPage != "" && serveNotFoundPage(w, r, fs, cfg.NotFoundPage) {
+				return
+			}
 		}
 
 		fileServer.ServeHTTP(w, r)
 	})
 }
 
-// isNavigation reports whether r looks like a client-side route navigation rather
-// than an asset request: a GET whose final path segment has no file extension and
-// which is not the root "/". Asset requests (paths ending in a real extension) are
+// isNavigation reports whether r looks like a page navigation rather than an asset
+// request: a GET or HEAD whose final path segment has no file extension and which is
+// not the root "/". Asset requests (paths ending in a real extension) are
 // deliberately excluded so a missing asset 404s instead of masking a broken build.
 func isNavigation(r *http.Request) bool {
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
 	if r.URL.Path == "/" {
@@ -290,24 +308,55 @@ func exists(fs http.FileSystem, p string) bool {
 // header, using http.ServeContent so conditional and range requests are honoured.
 // It is the SPA history-fallback target. A missing or unreadable index yields 404.
 func serveIndex(w http.ResponseWriter, r *http.Request, fs http.FileSystem) {
-	f, err := fs.Open("/index.html")
-	if err != nil {
+	if !serveFileContent(w, r, fs, "/index.html") {
 		http.NotFound(w, r)
-		return
+	}
+}
+
+// openRegular opens p in fs and returns it only when it is a seekable regular file.
+func openRegular(fs http.FileSystem, p string) (http.File, os.FileInfo, bool) {
+	f, err := fs.Open(p)
+	if err != nil {
+		return nil, nil, false
+	}
+	stat, err := f.Stat()
+	if _, seekable := f.(io.ReadSeeker); err != nil || stat.IsDir() || !seekable {
+		_ = f.Close()
+		return nil, nil, false
+	}
+	return f, stat, true
+}
+
+// serveFileContent serves the regular file p from fs with status 200 and a no-cache
+// header, honouring conditional and range requests. It reports false, writing
+// nothing, when p is not a regular file.
+func serveFileContent(w http.ResponseWriter, r *http.Request, fs http.FileSystem, p string) bool {
+	f, stat, ok := openRegular(fs, p)
+	if !ok {
+		return false
 	}
 	defer func() { _ = f.Close() }()
-	stat, err := f.Stat()
-	if err != nil || stat.IsDir() {
-		http.NotFound(w, r)
-		return
-	}
-	rs, ok := f.(io.ReadSeeker)
-	if !ok {
-		http.Error(w, "index not seekable", http.StatusInternalServerError)
-		return
-	}
 	w.Header().Set("Cache-Control", "no-cache")
-	http.ServeContent(w, r, "index.html", stat.ModTime(), rs)
+	http.ServeContent(w, r, path.Base(p), stat.ModTime(), f.(io.ReadSeeker))
+	return true
+}
+
+// serveNotFoundPage serves the HTML page p from fs with status 404, so a static site
+// can show its own not-found page while crawlers and link checkers see the miss. It
+// reports false, writing nothing, when p is not a regular file.
+func serveNotFoundPage(w http.ResponseWriter, r *http.Request, fs http.FileSystem, p string) bool {
+	f, _, ok := openRegular(fs, p)
+	if !ok {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusNotFound)
+	if r.Method != http.MethodHead {
+		_, _ = io.Copy(w, f)
+	}
+	return true
 }
 
 // setCacheControl sets a Cache-Control header appropriate to the request path:

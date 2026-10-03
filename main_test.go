@@ -763,3 +763,83 @@ func TestMainGracefulShutdown(t *testing.T) {
 		t.Errorf("expected clean exit after SIGTERM, got: %v", err)
 	}
 }
+
+// get issues a request with the given method and returns the status and body.
+func get(t *testing.T, method, url string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body)
+}
+
+// TestCleanURLs verifies that with CLEAN_URLS on, /page is served from /page.html
+// (GET and HEAD), real files and directory indexes still win, and a miss stays 404.
+func TestCleanURLs(t *testing.T) {
+	srv, dir := newConfiguredServer(t, config{CleanURLs: true})
+	defer srv.Close()
+	_ = os.MkdirAll(dir+"/guide/sub", 0o755)
+	_ = os.WriteFile(dir+"/guide/start.html", []byte("start page"), 0o644)
+	_ = os.WriteFile(dir+"/guide/sub/index.html", []byte("sub index"), 0o644)
+
+	if code, body := get(t, http.MethodGet, srv.URL+"/guide/start"); code != 200 || body != "start page" {
+		t.Errorf("clean URL: got %d %q, want 200 start page", code, body)
+	}
+	if code, _ := get(t, http.MethodHead, srv.URL+"/guide/start"); code != 200 {
+		t.Errorf("clean URL HEAD: got %d, want 200", code)
+	}
+	if code, body := get(t, http.MethodGet, srv.URL+"/guide/sub/"); code != 200 || body != "sub index" {
+		t.Errorf("directory index: got %d %q", code, body)
+	}
+	if code, _ := get(t, http.MethodGet, srv.URL+"/guide/missing"); code != 404 {
+		t.Errorf("missing page: got %d, want 404", code)
+	}
+	// Off by default: the extensionless path is not mapped.
+	off, offDir := newConfiguredServer(t, config{})
+	defer off.Close()
+	_ = os.WriteFile(offDir+"/start.html", []byte("x"), 0o644)
+	if code, _ := get(t, http.MethodGet, off.URL+"/start"); code != 404 {
+		t.Errorf("CLEAN_URLS off: got %d, want 404", code)
+	}
+}
+
+// TestNotFoundPage verifies that NOT_FOUND_PAGE is served with status 404 for an
+// unknown navigation route, that a missing asset stays a plain 404, that a missing
+// page file degrades to a plain 404, and that SPA_FALLBACK takes precedence.
+func TestNotFoundPage(t *testing.T) {
+	srv, dir := newConfiguredServer(t, config{CleanURLs: true, NotFoundPage: "/404.html"})
+	defer srv.Close()
+	_ = os.WriteFile(dir+"/404.html", []byte("custom not found"), 0o644)
+
+	code, body := get(t, http.MethodGet, srv.URL+"/no/such/page")
+	if code != 404 || body != "custom not found" {
+		t.Errorf("unknown route: got %d %q, want 404 custom page", code, body)
+	}
+	if code, body := get(t, http.MethodHead, srv.URL+"/no/such/page"); code != 404 || body != "" {
+		t.Errorf("unknown route HEAD: got %d %q, want 404 and no body", code, body)
+	}
+	if code, body := get(t, http.MethodGet, srv.URL+"/assets/missing.js"); code != 404 || strings.Contains(body, "custom") {
+		t.Errorf("missing asset: got %d %q, want plain 404", code, body)
+	}
+
+	bare, _ := newConfiguredServer(t, config{NotFoundPage: "/404.html"})
+	defer bare.Close()
+	if code, _ := get(t, http.MethodGet, bare.URL+"/no/such/page"); code != 404 {
+		t.Errorf("absent 404 page: got %d, want plain 404", code)
+	}
+
+	spa, spaDir := newConfiguredServer(t, config{SPAFallback: true, NotFoundPage: "/404.html"})
+	defer spa.Close()
+	_ = os.WriteFile(spaDir+"/index.html", []byte("app"), 0o644)
+	_ = os.WriteFile(spaDir+"/404.html", []byte("nf"), 0o644)
+	if code, body := get(t, http.MethodGet, spa.URL+"/route"); code != 200 || body != "app" {
+		t.Errorf("SPA precedence: got %d %q, want 200 app", code, body)
+	}
+}

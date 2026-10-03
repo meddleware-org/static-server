@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] - 2026-10-03
+
+### Added
+
+- `CLEAN_URLS` (default `false`): an extensionless path that does not exist is served from
+  `<path>.html`, so generated sites with clean links (VitePress `cleanUrls`) serve the right page on
+  a direct visit or refresh instead of relying on an SPA fallback.
+- `NOT_FOUND_PAGE` (default empty): for an unknown navigation route, serve this page with status
+  `404` (ignored when `SPA_FALLBACK` is on; missing assets keep a plain 404).
+
+### Changed
+
+- Navigation handling (SPA fallback, clean URLs, 404 page) applies to `HEAD` as well as `GET`, so a
+  `HEAD` reports the same status as the `GET`.
+- CI pins `govulncheck` (v1.8.0) instead of installing `@latest`.
+
 ## [0.1.3] - 2026-10-01
 
 ### Added

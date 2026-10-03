@@ -38,6 +38,8 @@ docker.io/meddleware/static-server:v0.1.0
 | `SERVE_DIR` | `/app/public` | Primary directory to serve static files from; mount operator content here |
 | `FALLBACK_DIR` | `/app/default` | Fallback directory when a file is not found in `SERVE_DIR`; set to empty to disable |
 | `SPA_FALLBACK` | `false` | Serve `index.html` (200) for unknown navigation routes (extensionless paths); asset paths still 404 on miss |
+| `CLEAN_URLS` | `false` | Serve `/<path>` from `/<path>.html` when `/<path>` itself does not exist (static-site generators with extensionless links, e.g. VitePress `cleanUrls`) |
+| `NOT_FOUND_PAGE` | (empty) | Page served with status `404` for unknown navigation routes, e.g. `/404.html`; empty = plain 404. Ignored when `SPA_FALLBACK` is on; assets still get a plain 404 |
 | `CACHE_IMMUTABLE_PREFIX` | (empty) | Path prefix whose files get one-year immutable `Cache-Control` (fingerprinted assets, e.g. `/assets/`); html/nav get `no-cache` |
 | `CONTENT_SECURITY_POLICY` | (unset) | Sets the `Content-Security-Policy` header when provided |
 | `CSP_NONCE` | `true` | Appends a fresh `'nonce-…'` to the policy's `script-src` on every response. The server inlines no scripts; the nonce lets an edge that injects scripts and reads the nonce from this header (Cloudflare JavaScript Detections / Bot Fight Mode) run them without `'unsafe-inline'`. A policy without `script-src` is left unchanged. |
@@ -46,6 +48,13 @@ docker.io/meddleware/static-server:v0.1.0
 | `PRECOMPRESSED` | `false` | Serve a sibling `.br`/`.gz` asset when the client accepts it and it exists |
 
 See [`.env.example`](.env.example) for a copy-paste template.
+
+### Hosting a generated static site
+
+For a multi-page static site (VitePress, Astro, Hugo …) set `CLEAN_URLS=true` and
+`NOT_FOUND_PAGE=/404.html`, and leave `SPA_FALLBACK` off: every page is served from its own HTML
+file, and an unknown path gets the site's 404 page with a real `404` status (an SPA fallback would
+answer every unknown path with the home page and `200`).
 
 ### Hosting a single-page app (SPA)
 
