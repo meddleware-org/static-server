@@ -8,6 +8,25 @@ This policy covers security issues in:
 - The container image build (`Dockerfile`) — issues arising from the base image or build configuration
 - The published images at `quay.io/meddleware-org/static-server` and `docker.io/meddleware/static-server`
 
+## Invariants
+
+- **Served paths are confined to the serve root.** Each directory is opened with `os.OpenRoot`, so a
+  symlink that leaves it is not followed (a 404). Symlinks that stay inside it (a ConfigMap mount's
+  `..data` links) work.
+- **Dot-files are not served.** Any path segment starting with `.` is a 404 (`.env`, `.git/`, backups),
+  except a leading `/.well-known/`.
+- **Directory listing is off**, and security headers are set on every response.
+- **Releases are checked and signed.** The release workflow runs the CI checks (lint, race tests,
+  govulncheck, Trivy filesystem scan) on the tagged commit and a Trivy scan of the pushed image, then
+  signs it keylessly. Verify against THIS repository's workflow, not any GitHub identity:
+
+  ```bash
+  cosign verify \
+    --certificate-identity-regexp '^https://github.com/meddleware-org/static-server/\.github/workflows/docker-publish\.yml@refs/tags/v' \
+    --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+    quay.io/meddleware-org/static-server@<digest>
+  ```
+
 It does not cover:
 
 - Security issues arising from content mounted at `SERVE_DIR` by the operator

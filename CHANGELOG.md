@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.5] - 2026-10-08
+
+### Security
+
+- **Served paths are confined to the serve root.** `SERVE_DIR` and `FALLBACK_DIR` are opened with
+  `os.OpenRoot`: a symlink that leaves the root is refused (404) instead of followed, so a stray link
+  in a mounted volume can no longer expose files such as a service-account token. Links that stay
+  inside the root keep working.
+- **Dot-files and dot-directories are not served** (`/.env`, `/.git/config`, backups), except a leading
+  `/.well-known/`.
+
+### Changed
+
+- The release workflow reuses the CI workflow (lint, race tests, govulncheck, Trivy filesystem scan) on
+  the tagged commit and scans the pushed image before signing it.
+- `go.mod` names `toolchain go1.26.7`, and the Dockerfile fails if the builder image's Go differs, so
+  the binary is built with the toolchain govulncheck checked.
+- The published `cosign verify` hint pins this repository's release workflow instead of accepting any
+  GitHub Actions identity.
+
 ## [0.1.4] - 2026-10-03
 
 ### Added

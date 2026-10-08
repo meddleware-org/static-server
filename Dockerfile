@@ -8,6 +8,10 @@ WORKDIR /build
 COPY go.mod ./
 COPY *.go ./
 
+# The binary is built with the toolchain go.mod names, which is the one CI's govulncheck checks: a builder
+# image left on another patch fails here instead of shipping an unchecked stdlib.
+RUN grep -q "^toolchain $(go env GOVERSION)$" go.mod || { echo "builder $(go env GOVERSION) != go.mod toolchain"; exit 1; }
+
 # Inject build-time metadata. VERSION is the only value that changes per release.
 # All other values default to the upstream project coordinates; forks override
 # via --build-arg without touching this file.

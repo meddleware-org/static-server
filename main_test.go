@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -868,5 +869,94 @@ func TestTraversalRejected(t *testing.T) {
 			}
 		}
 		srv.Close()
+	}
+}
+
+// serveRooted builds a server over rootedFS(dir): the filesystem main uses.
+func serveRooted(t *testing.T, dir string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(newHandler(config{}, cascadeFS{rootedFS(dir)}))
+}
+
+func getStatus(t *testing.T, url string) int {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode
+}
+
+// TestSymlinkEscapeRefused verifies that a symlink leaving the serve root is not followed, while a
+// symlink that stays inside it (the shape of a ConfigMap mount's ..data links) keeps working.
+func TestSymlinkEscapeRefused(t *testing.T) {
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "real.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "secret.txt"), filepath.Join(dir, "escape.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("real.txt", filepath.Join(dir, "inside.txt")); err != nil {
+		t.Fatal(err)
+	}
+	srv := serveRooted(t, dir)
+	defer srv.Close()
+	if got := getStatus(t, srv.URL+"/escape.txt"); got != http.StatusNotFound {
+		t.Errorf("symlink outside the root: status %d, want 404", got)
+	}
+	if got := getStatus(t, srv.URL+"/inside.txt"); got != http.StatusOK {
+		t.Errorf("symlink inside the root: status %d, want 200", got)
+	}
+}
+
+// TestDotfilesHidden verifies that dot-files and dot-directories are not served, except /.well-known/.
+func TestDotfilesHidden(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		".env":                         "SECRET=1",
+		".git/config":                  "[core]",
+		"app/.hidden":                  "x",
+		".well-known/security.txt":     "Contact: mailto:a@example.com",
+		"app/.well-known/security.txt": "nested well-known is not special",
+		"ok.txt":                       "fine",
+	} {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	srv := serveRooted(t, dir)
+	defer srv.Close()
+	for path, want := range map[string]int{
+		"/ok.txt":                       http.StatusOK,
+		"/.well-known/security.txt":     http.StatusOK,
+		"/.env":                         http.StatusNotFound,
+		"/.git/config":                  http.StatusNotFound,
+		"/app/.hidden":                  http.StatusNotFound,
+		"/app/.well-known/security.txt": http.StatusNotFound,
+		"/%2e%65nv":                     http.StatusNotFound,
+	} {
+		if got := getStatus(t, srv.URL+path); got != want {
+			t.Errorf("GET %s: status %d, want %d", path, got, want)
+		}
+	}
+}
+
+// TestRootedFSMissingDirServesNothing verifies that a directory that cannot be opened is an empty
+// filesystem (404 everywhere) rather than a startup failure.
+func TestRootedFSMissingDirServesNothing(t *testing.T) {
+	srv := serveRooted(t, filepath.Join(t.TempDir(), "does-not-exist"))
+	defer srv.Close()
+	if got := getStatus(t, srv.URL+"/anything"); got != http.StatusNotFound {
+		t.Errorf("status %d, want 404", got)
 	}
 }

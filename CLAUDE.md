@@ -21,7 +21,10 @@ Two invariants must hold at all times:
    `FALLBACK_DIR`. Do not flatten this into a single `http.Dir`. The cascade is the
    feature that makes partial volume overlays work.
 
-2. **Directory listing disabled** — `safeDir` wraps the cascade and returns
+2. **Paths stay in the root** — `rootedFS` opens each directory with `os.OpenRoot` (symlinks leaving
+   it are 404) and `noDotfiles` hides dot-paths except `/.well-known/`. Do not go back to `http.Dir`.
+
+3. **Directory listing disabled** — `safeDir` wraps the cascade and returns
    `os.ErrNotExist` for directories without `index.html`. Do not bypass or remove
    `safeDir`. Any refactor that separates `safeDir` from the `http.FileServer` call
    will silently re-enable directory listing.

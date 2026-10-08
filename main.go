@@ -53,6 +53,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -164,9 +165,9 @@ func main() {
 	// Build the cascade filesystem: SERVE_DIR is always tried first. FALLBACK_DIR
 	// is appended only when non-empty so that setting FALLBACK_DIR="" completely
 	// disables the fallback behaviour.
-	fsList := []http.FileSystem{http.Dir(cfg.ServeDir)}
+	fsList := []http.FileSystem{rootedFS(cfg.ServeDir)}
 	if cfg.FallbackDir != "" {
-		fsList = append(fsList, http.Dir(cfg.FallbackDir))
+		fsList = append(fsList, rootedFS(cfg.FallbackDir))
 	}
 
 	srv := &http.Server{
@@ -250,7 +251,7 @@ func handleVersion(w http.ResponseWriter, _ *http.Request) {
 // routes when SPA_FALLBACK is enabled, and otherwise delegates to the standard
 // http.FileServer wrapped in safeDir (which disables directory listing).
 func fileHandler(cfg config, fs http.FileSystem) http.Handler {
-	sfs := safeDir{fs}
+	sfs := safeDir{noDotfiles{fs}}
 	fileServer := http.FileServer(sfs)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setCacheControl(cfg, w, r.URL.Path)
@@ -462,6 +463,48 @@ func (fs cascadeFS) Open(name string) (http.File, error) {
 		return nil, os.ErrNotExist
 	}
 	return nil, lastErr
+}
+
+// rootedFS serves dir through os.OpenRoot: every path is resolved inside dir, and a symlink that
+// leaves it is refused (http.Dir follows them, so a stray symlink in a mounted volume would serve
+// whatever the container can read, such as a service-account token). Symlinks that stay inside dir
+// (the ..data links of a ConfigMap mount) keep working. A directory that cannot be opened yields an
+// empty filesystem (everything is 404) rather than stopping the server, as http.Dir did.
+func rootedFS(dir string) http.FileSystem {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		slog.Warn("serve directory cannot be opened; serving nothing from it", "dir", dir, "err", err)
+		return cascadeFS{}
+	}
+	return escapeIsNotFound{http.FS(root.FS())}
+}
+
+// escapeIsNotFound reports a path the root refuses (a symlink leaving it) as not found: http.FileServer
+// would otherwise answer 500, and a 404 reveals nothing about what lies outside the root.
+type escapeIsNotFound struct{ http.FileSystem }
+
+// Open implements http.FileSystem; any error other than not-found or permission becomes os.ErrNotExist.
+func (e escapeIsNotFound) Open(name string) (http.File, error) {
+	f, err := e.FileSystem.Open(name)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) && !errors.Is(err, fs.ErrPermission) {
+		return nil, os.ErrNotExist
+	}
+	return f, err
+}
+
+// noDotfiles hides dot-files and dot-directories (.env, .git/, editor and backup droppings): any
+// path segment that starts with "." is not found, except a leading /.well-known/ (RFC 8615).
+type noDotfiles struct{ http.FileSystem }
+
+// Open implements http.FileSystem; a hidden path is os.ErrNotExist.
+func (d noDotfiles) Open(name string) (http.File, error) {
+	segments := strings.Split(strings.Trim(name, "/"), "/")
+	for i, seg := range segments {
+		if strings.HasPrefix(seg, ".") && seg != "." && !(i == 0 && seg == ".well-known") {
+			return nil, os.ErrNotExist
+		}
+	}
+	return d.FileSystem.Open(name)
 }
 
 // safeDir wraps an http.FileSystem and prevents directory listing. For any path
