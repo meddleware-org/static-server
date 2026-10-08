@@ -500,7 +500,7 @@ type noDotfiles struct{ http.FileSystem }
 func (d noDotfiles) Open(name string) (http.File, error) {
 	segments := strings.Split(strings.Trim(name, "/"), "/")
 	for i, seg := range segments {
-		if strings.HasPrefix(seg, ".") && seg != "." && !(i == 0 && seg == ".well-known") {
+		if strings.HasPrefix(seg, ".") && seg != "." && (i != 0 || seg != ".well-known") {
 			return nil, os.ErrNotExist
 		}
 	}

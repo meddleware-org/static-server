@@ -4,7 +4,9 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
 
-## [0.1.5] - 2026-10-08
+## [0.1.6] - 2026-10-08
+
+(0.1.5 was tagged but never published: its release gate caught a lint finding.)
 
 ### Security
 
