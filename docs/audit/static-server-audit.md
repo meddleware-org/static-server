@@ -361,9 +361,9 @@ scan regressions can reach a tag.
 - **Fixed in 0.1.6** (`192b01f`): the release summary now prints
   `--certificate-identity-regexp '^https://github.com/meddleware-org/static-server/\.github/workflows/docker-publish\.yml@refs/tags/v'`
   with the GitHub OIDC issuer, and SECURITY.md carries the same command (against the quay.io image).
-  The README does not repeat it. The workspace's `bootstrap/images/verify-digests.sh` verifies each
-  pinned digest against a per-image `https://github.com/meddleware-org/<name>/` identity prefix
-  (16/16 valid, 2026-10-09).
+  The README does not repeat it. The workspace's `bootstrap/images/verify-digests.sh` verified each
+  pinned digest against a per-image `https://github.com/meddleware-org/<name>/` identity prefix on
+  2026-10-09 (16/16 valid); since 2026-10-18 its default identity is workflow-anchored (`^https://github\.com/meddleware-org/${name}/\.github/workflows/docker-publish\.yml@refs/tags/v` , 16/16 valid).
 - **Cluster admission (OQ3):** the `ClusterImagePolicy` in `k8s/base/infrastructure/policy-controller`
   pins the GitHub issuer and a `meddleware-org/<any repo>/.github/workflows/…` regexp (any workflow of
   any org repository, not this one) and is in `warn` mode. That is a platform item (not this repository);
@@ -929,6 +929,7 @@ per consumer is that consumer's audit; the image's own default page carries none
     loaded in headless Chromium with no console errors or CSP violations (release facts).
   - **CI `image` job:** the "not verified" item of the fix-wave entry is closed: the `image` (build and smoke test) job passed in the `v0.1.8` Publish run 39115965481 (self-hosted-registry mirror job failed at login as before, best-effort).
   - **Open items unchanged:** OQ2 (default CSP) and the external review.
+- 2026-10-18 — cosign identity in the workspace script: the default identity in `bootstrap/images/verify-digests.sh` is now workflow-anchored (`^https://github\.com/meddleware-org/${name}/\.github/workflows/docker-publish\.yml@refs/tags/v`); all 16 deployed and contingency images verified valid against it (`STRICT=0 bash bootstrap/images/verify-digests.sh`). This audit has no finding for it (F3 is RESOLVED on the published command); the F3 evidence sentence is updated. Unchanged: the cluster `ClusterImagePolicy` (OQ3, platform item).
 
 ## Pre-save consistency checklist (this pass)
 
