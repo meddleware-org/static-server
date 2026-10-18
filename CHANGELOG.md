@@ -4,6 +4,46 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.8] - 2026-10-18
+
+### Security
+
+- **The 405 response carries the security headers.** `methodGuard` ran outside `secureHeaders`, so a
+  rejected method (POST, PUT, ...) got only `nosniff` from `http.Error`: no `X-Frame-Options`,
+  `Referrer-Policy`, HSTS, `Permissions-Policy` or CSP. `secureHeaders` now wraps `methodGuard`.
+- **`CSP_NONCE` also covers `script-src-elem`**, which takes precedence for `<script>` elements, so an
+  edge-injected script is no longer blocked by a policy that sets it. Only the first occurrence of a
+  directive is touched, and a directive that is exactly `'none'` is left alone.
+- **No `Cache-Control` on the SPA-fallback 404.** When `SPA_FALLBACK` is on and there is no `index.html`
+  at all, a navigation route under `CACHE_IMMUTABLE_PREFIX` answered 404 with the immutable header set
+  earlier; it is now removed.
+
+### Fixed
+
+- **`PRECOMPRESSED` negotiation.** `Accept-Encoding` is parsed into whole tokens with q-values: a coding
+  refused with `q=0` (`br;q=0, gzip`) is no longer served, and a token that merely contains `br` or
+  `gzip` no longer matches. Asset responses carry `Vary: Accept-Encoding` whether or not a compressed
+  sibling is served, so a shared cache keys the identity variant too.
+- Documentation: the package comment gave `FALLBACK_DIR` the image default (`/app/default`) as the
+  binary's; `CLEAN_URLS`, `NOT_FOUND_PAGE`, `CSP_NONCE`, `STRICT_TRANSPORT_SECURITY` and
+  `PERMISSIONS_POLICY` are now in `public/llms.txt`, `public/index.html` (served at `/llms.txt` and the
+  default page), `llms.txt`, `.env.example`, `README.md` and `AGENTS.md`; workflow, `envsubst`, Go
+  version and test-count slips corrected in README, AGENTS, `llms.txt`, CLAUDE.md, the Dockerfile,
+  the Makefile and the workflow headers.
+
+### Added
+
+- `scripts/smoke.sh` and a `make smoke` target: run a built image the way a cluster does (image user
+  `65534`, read-only root, no capabilities) and check the in-image `-healthcheck`, `/healthz`, `/version`,
+  the default page, the security headers on a 200, 404 and 405, a CSP nonce, a 404 under the immutable
+  prefix with no `Cache-Control`, dot-files and the method guard. Works with Docker or rootless Podman.
+- The `Go CI` workflow gains an `image` job (build the Dockerfile, run the smoke test), so a Dockerfile or
+  builder-digest regression fails the pull request, and the release gate (`verify`) runs it on the tag.
+- Tests: no caching headers on error responses (pins the stdlib behaviour that
+  `GODEBUG=httpservecontentkeepheaders=1` would undo), `Accept-Encoding` parsing and `Vary`, the nonce on
+  `script-src-elem`, security headers on 405, and `TestDocsListEveryOption` (every environment variable
+  read in `main.go` is documented in every reference surface).
+
 ## [0.1.7] - 2026-10-09
 
 ### Security

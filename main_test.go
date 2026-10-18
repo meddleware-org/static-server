@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -356,8 +357,7 @@ func TestCacheControl(t *testing.T) {
 	}
 }
 
-// TestCSP verifies the Content-Security-Policy header is set when configured and
-// absent otherwise.
+// TestCSPNonce verifies every response carries a fresh 128-bit nonce in the CSP's script-src.
 func TestCSPNonce(t *testing.T) {
 	csp := "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'"
 	srv, dir := newConfiguredServer(t, config{CSP: csp, CSPNonce: true})
@@ -383,13 +383,21 @@ func TestCSPNonce(t *testing.T) {
 	}
 }
 
+// TestWithScriptNonce verifies which directives of a policy receive the nonce.
 func TestWithScriptNonce(t *testing.T) {
 	cases := map[string]string{
-		"default-src 'self'":                         "default-src 'self'",
-		"default-src 'self'; script-src 'self'":      "default-src 'self'; script-src 'self' 'nonce-N'",
-		"script-src 'self' ; object-src 'none'":      "script-src 'self' 'nonce-N'; object-src 'none'",
-		"default-src 'self'; Script-Src 'self'":      "default-src 'self'; Script-Src 'self' 'nonce-N'",
-		"default-src 'self'; script-src-elem 'self'": "default-src 'self'; script-src-elem 'self'",
+		"default-src 'self'":                    "default-src 'self'",
+		"default-src 'self'; script-src 'self'": "default-src 'self'; script-src 'self' 'nonce-N'",
+		"script-src 'self' ; object-src 'none'": "script-src 'self' 'nonce-N'; object-src 'none'",
+		"default-src 'self'; Script-Src 'self'": "default-src 'self'; Script-Src 'self' 'nonce-N'",
+		// script-src-elem governs <script> elements, so the nonce goes there too.
+		"default-src 'self'; script-src-elem 'self'":                "default-src 'self'; script-src-elem 'self' 'nonce-N'",
+		"script-src 'self'; script-src-elem 'self'; img-src 'self'": "script-src 'self' 'nonce-N'; script-src-elem 'self' 'nonce-N'; img-src 'self'",
+		// Only the first occurrence of a directive counts in CSP; repeats are left alone.
+		"script-src 'self'; script-src 'unsafe-eval'": "script-src 'self' 'nonce-N'; script-src 'unsafe-eval'",
+		// A "no scripts" directive stays that way.
+		"script-src 'none'; script-src-elem 'self'": "script-src 'none'; script-src-elem 'self' 'nonce-N'",
+		"default-src 'none'; script-src 'NONE'":     "default-src 'none'; script-src 'NONE'",
 	}
 	for in, want := range cases {
 		if got := withScriptNonce(in, "N"); got != want {
@@ -398,6 +406,8 @@ func TestWithScriptNonce(t *testing.T) {
 	}
 }
 
+// TestCSP verifies the Content-Security-Policy header is set when configured and
+// absent otherwise.
 func TestCSP(t *testing.T) {
 	srv, dir := newConfiguredServer(t, config{CSP: "default-src 'self'"})
 	defer srv.Close()
@@ -493,6 +503,42 @@ func TestMethodNotAllowed(t *testing.T) {
 	}
 	if allow := resp.Header.Get("Allow"); allow != "GET, HEAD" {
 		t.Errorf("Allow: got %q, want %q", allow, "GET, HEAD")
+	}
+}
+
+// TestSecurityHeadersOnMethodNotAllowed verifies the 405 from methodGuard carries every configured
+// security header, like any other response (methodGuard must run inside secureHeaders).
+func TestSecurityHeadersOnMethodNotAllowed(t *testing.T) {
+	cfg := config{
+		CSP: "default-src 'self'; script-src 'self'", CSPNonce: true,
+		HSTS: defaultHSTS, Permissions: defaultPermissionsPolicy,
+	}
+	srv, _ := newConfiguredServer(t, cfg)
+	defer srv.Close()
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch, http.MethodOptions} {
+		req, _ := http.NewRequest(method, srv.URL+"/anything", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusMethodNotAllowed {
+			t.Fatalf("%s: got %d, want 405", method, resp.StatusCode)
+		}
+		for h, want := range map[string]string{
+			"X-Content-Type-Options":    "nosniff",
+			"X-Frame-Options":           "SAMEORIGIN",
+			"Referrer-Policy":           "strict-origin-when-cross-origin",
+			"Strict-Transport-Security": defaultHSTS,
+			"Permissions-Policy":        defaultPermissionsPolicy,
+		} {
+			if got := resp.Header.Get(h); got != want {
+				t.Errorf("%s 405: %s = %q, want %q", method, h, got, want)
+			}
+		}
+		if csp := resp.Header.Get("Content-Security-Policy"); !strings.HasPrefix(csp, "default-src 'self'; script-src 'self' 'nonce-") {
+			t.Errorf("%s 405: Content-Security-Policy = %q, want the policy with a nonce", method, csp)
+		}
 	}
 }
 
@@ -958,5 +1004,222 @@ func TestRootedFSMissingDirServesNothing(t *testing.T) {
 	defer srv.Close()
 	if got := getStatus(t, srv.URL+"/anything"); got != http.StatusNotFound {
 		t.Errorf("status %d, want 404", got)
+	}
+}
+
+// TestNoCachingHeadersOnErrors pins that an error response never carries a caching header, in
+// particular that a missing fingerprinted asset under CACHE_IMMUTABLE_PREFIX is not "immutable"
+// (a year-long cached 404 across every app). The guarantee comes from net/http's serveError (Go 1.23+),
+// which GODEBUG=httpservecontentkeepheaders=1 would undo, and from serveIndex; this test fails if a
+// toolchain or setting change reintroduces it.
+func TestNoCachingHeadersOnErrors(t *testing.T) {
+	for _, spa := range []bool{false, true} {
+		cfg := config{ImmutablePrefix: "/assets/", SPAFallback: spa, CleanURLs: true, NotFoundPage: "/404.html"}
+		srv, dir := newConfiguredServer(t, cfg)
+		defer srv.Close()
+		if err := os.Mkdir(dir+"/assets", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dir+"/assets/real.abc123.js", []byte("1"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// A directory under the prefix without an index.html is a 404 too.
+		if err := os.Mkdir(dir+"/assets/empty", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range []string{"/assets/missing.abc123.js", "/assets/nested/missing.css", "/assets/empty/", "/assets/.env", "/missing.js"} {
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				req, _ := http.NewRequest(method, srv.URL+p, nil)
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_ = resp.Body.Close()
+				if resp.StatusCode != http.StatusNotFound {
+					t.Errorf("spa=%v %s %s: got %d, want 404", spa, method, p, resp.StatusCode)
+				}
+				for _, h := range []string{"Cache-Control", "Etag", "Last-Modified", "Expires"} {
+					if v := resp.Header.Get(h); v != "" {
+						t.Errorf("spa=%v %s %s: error response carries %s: %q", spa, method, p, h, v)
+					}
+				}
+			}
+		}
+		// The 405 from the method guard is an error response as well.
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/assets/real.abc123.js", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusMethodNotAllowed || resp.Header.Get("Cache-Control") != "" {
+			t.Errorf("spa=%v POST: got %d with Cache-Control %q, want 405 without", spa, resp.StatusCode, resp.Header.Get("Cache-Control"))
+		}
+		// A hit under the prefix is still immutable (the test above would otherwise pass trivially).
+		hit, err := http.Get(srv.URL + "/assets/real.abc123.js")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = hit.Body.Close()
+		if cc := hit.Header.Get("Cache-Control"); cc != "public, max-age=31536000, immutable" {
+			t.Errorf("spa=%v hit Cache-Control: got %q", spa, cc)
+		}
+	}
+}
+
+// TestSPAWithoutIndexIsPlain404 verifies that an SPA navigation route under the immutable prefix,
+// on a deployment with no index.html at all, is a plain 404 and not an immutable one.
+func TestSPAWithoutIndexIsPlain404(t *testing.T) {
+	srv, _ := newConfiguredServer(t, config{ImmutablePrefix: "/app/", SPAFallback: true})
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/app/route")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("got %d, want 404", resp.StatusCode)
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "" {
+		t.Errorf("Cache-Control on the 404: got %q, want none", cc)
+	}
+}
+
+// TestAcceptsEncoding verifies Accept-Encoding token and q-value parsing.
+func TestAcceptsEncoding(t *testing.T) {
+	cases := []struct {
+		ae, name string
+		want     bool
+	}{
+		{"br", "br", true},
+		{"gzip, br", "br", true},
+		{"gzip, deflate, br;q=0.8", "br", true},
+		{"BR", "br", true},
+		{" br ; q=1.0 ", "br", true},
+		{"br;q=0, gzip", "br", false},
+		{"br;q=0.0, gzip", "br", false},
+		{"gzip, br;q=0", "br", false},
+		{"br;q=0, gzip", "gzip", true},
+		{"br;q=abc", "br", false},
+		{"br;level=5", "br", true},
+		{"xbr", "br", false},
+		{"brotli", "br", false},
+		{"x-gzip", "gzip", false},
+		{"gzip-ish, identity", "gzip", false},
+		{"*", "br", false},
+		{"identity", "br", false},
+		{"", "br", false},
+	}
+	for _, c := range cases {
+		if got := acceptsEncoding(c.ae, c.name); got != c.want {
+			t.Errorf("acceptsEncoding(%q, %q) = %v, want %v", c.ae, c.name, got, c.want)
+		}
+	}
+}
+
+// TestPrecompressedNegotiation verifies q=0 refuses a variant, and that Vary: Accept-Encoding is set
+// on every response for an asset path, the identity variant included.
+func TestPrecompressedNegotiation(t *testing.T) {
+	srv, dir := newConfiguredServer(t, config{Precompressed: true})
+	defer srv.Close()
+	for name, body := range map[string]string{"app.js": "plain", "app.js.br": "br-bytes", "app.js.gz": "gz-bytes", "other.css": "css"} {
+		if err := os.WriteFile(dir+"/"+name, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	cases := []struct {
+		path, ae, wantBody, wantEnc string
+	}{
+		{"/app.js", "br", "br-bytes", "br"},
+		{"/app.js", "gzip, br", "br-bytes", "br"},
+		{"/app.js", "br;q=0, gzip", "gz-bytes", "gzip"},
+		{"/app.js", "br;q=0, gzip;q=0", "plain", ""},
+		{"/app.js", "gzip", "gz-bytes", "gzip"},
+		{"/app.js", "xbr", "plain", ""},
+		{"/app.js", "", "plain", ""},
+		{"/other.css", "br", "css", ""}, // no sibling: identity, still keyed by Vary
+	}
+	for _, c := range cases {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+c.path, nil)
+		if c.ae != "" {
+			req.Header.Set("Accept-Encoding", c.ae)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if string(body) != c.wantBody || resp.Header.Get("Content-Encoding") != c.wantEnc {
+			t.Errorf("%s with AE %q: got %q enc %q, want %q enc %q", c.path, c.ae, body, resp.Header.Get("Content-Encoding"), c.wantBody, c.wantEnc)
+		}
+		if vary := resp.Header.Values("Vary"); len(vary) != 1 || vary[0] != "Accept-Encoding" {
+			t.Errorf("%s with AE %q: Vary = %q, want exactly [Accept-Encoding]", c.path, c.ae, vary)
+		}
+	}
+	// A navigation route is never negotiated, so it carries no Vary.
+	resp, err := client.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if v := resp.Header.Get("Vary"); v != "" {
+		t.Errorf("/ carries Vary %q", v)
+	}
+}
+
+// TestPrecompressedOffNoVary verifies the Vary header only appears when PRECOMPRESSED is on.
+func TestPrecompressedOffNoVary(t *testing.T) {
+	srv, dir := newConfiguredServer(t, config{})
+	defer srv.Close()
+	if err := os.WriteFile(dir+"/app.js", []byte("plain"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(srv.URL + "/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if v := resp.Header.Get("Vary"); v != "" {
+		t.Errorf("Vary with PRECOMPRESSED off: %q", v)
+	}
+}
+
+// docSurfaces are the files CLAUDE.md requires every configuration option to appear in.
+var docSurfaces = []string{
+	"README.md", "llms.txt", "public/llms.txt", "public/index.html", ".env.example", "AGENTS.md",
+}
+
+// TestDocsListEveryOption pins the documentation discipline: every environment variable that main.go
+// reads appears in every reference surface, so a new option cannot ship undocumented.
+func TestDocsListEveryOption(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := regexp.MustCompile(`env(?:Or|OrEmpty|Bool)\("([A-Z_]+)"`).FindAllStringSubmatch(string(src), -1)
+	if len(opts) < 10 {
+		t.Fatalf("found only %d options in main.go; the pattern no longer matches", len(opts))
+	}
+	for _, surface := range docSurfaces {
+		body, err := os.ReadFile(surface)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range opts {
+			if !strings.Contains(string(body), m[1]) {
+				t.Errorf("%s does not mention %s", surface, m[1])
+			}
+		}
+	}
+	changelog, err := os.ReadFile("CHANGELOG.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range opts {
+		if m[1] != "PORT" && !strings.Contains(string(changelog), m[1]) {
+			t.Errorf("CHANGELOG.md does not mention %s", m[1])
+		}
 	}
 }

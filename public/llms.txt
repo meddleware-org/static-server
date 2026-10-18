@@ -23,10 +23,23 @@
                                (default /app/default; set to empty string to disable)
     SPA_FALLBACK=false     Serve index.html (200) for unknown extensionless navigation
                            routes; asset paths (with an extension) still 404 (default false)
+    CLEAN_URLS=false       Serve /<path> from /<path>.html when /<path> does not exist, for
+                           static-site generators with extensionless links (default false)
+    NOT_FOUND_PAGE=        Page served with status 404 for unknown navigation routes, e.g.
+                           /404.html (default empty = plain 404; ignored when SPA_FALLBACK is on)
     CACHE_IMMUTABLE_PREFIX=  Path prefix whose files get one-year immutable caching
                              (e.g. /assets/); html/nav get no-cache (default empty = off)
     CONTENT_SECURITY_POLICY=  Content-Security-Policy header value (default unset)
-    PRECOMPRESSED=false    Serve sibling .br/.gz assets when the client accepts them (default false)
+    CSP_NONCE=true         Append a fresh 'nonce-...' to the CSP's script-src and script-src-elem on
+                           every response, for edge-injected scripts; a nonce makes browsers ignore
+                           'unsafe-inline' in that directive. No effect without a CSP (default true)
+    STRICT_TRANSPORT_SECURITY=  Strict-Transport-Security value (default
+                           max-age=31536000; includeSubDomains; set to empty to omit)
+    PERMISSIONS_POLICY=    Permissions-Policy value (default camera=(), geolocation=(),
+                           microphone=(), payment=(); set to empty to omit)
+    PRECOMPRESSED=false    Serve sibling .br/.gz assets when the client accepts them, honouring
+                           q-values (br;q=0 is refused); asset paths get Vary: Accept-Encoding
+                           (default false)
 
 ## Response headers
 
@@ -34,8 +47,12 @@
     X-Frame-Options:         SAMEORIGIN                    (always)
     Referrer-Policy:         strict-origin-when-cross-origin  (always)
     Content-Security-Policy: set only when CONTENT_SECURITY_POLICY is configured
-    Cache-Control:           immutable under CACHE_IMMUTABLE_PREFIX; no-cache for html/nav
-    Content-Encoding, Vary:  set on precompressed hits when PRECOMPRESSED=true
+    Strict-Transport-Security: STRICT_TRANSPORT_SECURITY (on by default)
+    Permissions-Policy:      PERMISSIONS_POLICY (on by default)
+    Cache-Control:           immutable under CACHE_IMMUTABLE_PREFIX; no-cache for html/nav;
+                             never present on error responses
+    Content-Encoding, Vary:  Content-Encoding on precompressed hits; Vary: Accept-Encoding on asset
+                             paths when PRECOMPRESSED=true
 
 ## Behaviour
 
@@ -43,6 +60,11 @@
 - SPA fallback (SPA_FALLBACK=true): an unknown *navigation* route — a GET whose final path
   segment has no extension — serves index.html with 200, so client-side routing and
   deep-link refresh work. Asset requests (paths with an extension) still 404 on miss.
+- Clean URLs (CLEAN_URLS=true): an unknown extensionless path is served from <path>.html.
+- 404 page (NOT_FOUND_PAGE=/404.html): an unknown navigation route gets that page with status 404
+  (ignored when SPA_FALLBACK is on; assets still get a plain 404).
+- Dot-files and dot-directories (/.env, /.git/...) are 404; /.well-known/ is served. A symlink
+  that leaves the serve root is 404.
 - MIME types: correct types are registered at startup (scratch has no /etc/mime.types),
   including .wasm → application/wasm, so WebAssembly streaming instantiation works.
 - Cascade filesystem: files are resolved in SERVE_DIR first. If not found, the request

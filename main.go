@@ -22,7 +22,8 @@
 //
 //	PORT                    TCP listen port (default: 8080)
 //	SERVE_DIR               primary serve directory (default: /app/public)
-//	FALLBACK_DIR            fallback directory; empty disables the cascade (default: /app/default)
+//	FALLBACK_DIR            fallback directory; empty disables the cascade (default: "" in the binary;
+//	                        the container image sets /app/default)
 //	SPA_FALLBACK            serve index.html for unknown navigation routes (default: false)
 //	CLEAN_URLS              serve /<path> from /<path>.html when /<path> itself does not exist, for
 //	                        static-site generators that link extensionless URLs (default: false)
@@ -30,9 +31,11 @@
 //	                        /404.html (default: "" = plain 404; ignored when SPA_FALLBACK is on)
 //	CACHE_IMMUTABLE_PREFIX  path prefix whose files get long immutable caching (default: "" = off)
 //	CONTENT_SECURITY_POLICY value of the Content-Security-Policy header (default: "" = unset)
-//	CSP_NONCE               add a fresh 'nonce-…' to the CSP's script-src on every response, so an
-//	                        edge (e.g. Cloudflare JavaScript Detections) can mark the inline scripts
-//	                        it injects; the app's own scripts stay governed by 'self' (default: true)
+//	CSP_NONCE               add a fresh 'nonce-…' to the CSP's script-src and script-src-elem on every
+//	                        response, so an edge (e.g. Cloudflare JavaScript Detections) can mark the
+//	                        inline scripts it injects; the app's own scripts stay governed by 'self'.
+//	                        A nonce makes browsers ignore 'unsafe-inline' in that directive
+//	                        (default: true)
 //	STRICT_TRANSPORT_SECURITY value of the Strict-Transport-Security header
 //	                        (default: "max-age=31536000; includeSubDomains"; set to "" to omit)
 //	PERMISSIONS_POLICY      value of the Permissions-Policy header
@@ -60,6 +63,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -222,15 +226,16 @@ func healthCheck() int {
 
 // newHandler builds the full handler stack over the given cascade filesystem. It
 // is the single source of truth for request handling, used by both main and the
-// tests. The chain is: logRequest → methodGuard → secureHeaders → mux, where the
-// "/" route is served by fileHandler (cache-control + optional precompressed +
-// optional SPA fallback around http.FileServer(safeDir{fs})).
+// tests. The chain is: logRequest → secureHeaders → methodGuard → mux (methodGuard sits inside
+// secureHeaders so the 405 it answers carries the security headers too), where the "/" route
+// is served by fileHandler (cache-control + optional precompressed + optional SPA fallback
+// around http.FileServer(safeDir{fs})).
 func newHandler(cfg config, fs http.FileSystem) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handleHealthz)
 	mux.HandleFunc("/version", handleVersion)
 	mux.Handle("/", fileHandler(cfg, fs))
-	return logRequest(methodGuard(secureHeaders(cfg, mux)))
+	return logRequest(secureHeaders(cfg, methodGuard(mux)))
 }
 
 // handleHealthz responds 200 "ok" to liveness and readiness probes.
@@ -307,9 +312,12 @@ func exists(fs http.FileSystem, p string) bool {
 
 // serveIndex serves SERVE_DIR/index.html (via the cascade fs) with a no-cache
 // header, using http.ServeContent so conditional and range requests are honoured.
-// It is the SPA history-fallback target. A missing or unreadable index yields 404.
+// It is the SPA history-fallback target. A missing or unreadable index yields 404
+// without any Cache-Control header, so an immutable header set earlier for a path
+// under CACHE_IMMUTABLE_PREFIX is never attached to the error.
 func serveIndex(w http.ResponseWriter, r *http.Request, fs http.FileSystem) {
 	if !serveFileContent(w, r, fs, "/index.html") {
+		w.Header().Del("Cache-Control")
 		http.NotFound(w, r)
 	}
 }
@@ -379,9 +387,11 @@ func setCacheControl(cfg config, w http.ResponseWriter, p string) {
 // tryPrecompressed serves a precompressed sibling of the requested asset when the
 // client accepts it and the sibling exists. For a request to /app.js with
 // Accept-Encoding: br, it serves /app.js.br with Content-Encoding: br and Vary:
-// Accept-Encoding, preserving the original asset's Content-Type. It returns true
-// when it has served a response. Only asset paths (with a file extension) are
-// considered, so navigation routes are never intercepted here.
+// Accept-Encoding, preserving the original asset's Content-Type. A coding the client
+// refuses with q=0 is never served. Vary: Accept-Encoding is set on every response for
+// an asset path (one with a file extension), whether or not a sibling is served, so a
+// shared cache keys the identity variant too. It returns true when it has served a
+// response. Navigation routes are never intercepted here.
 func tryPrecompressed(w http.ResponseWriter, r *http.Request, fs http.FileSystem) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
@@ -391,9 +401,10 @@ func tryPrecompressed(w http.ResponseWriter, r *http.Request, fs http.FileSystem
 	if ext == "" {
 		return false
 	}
+	w.Header().Add("Vary", "Accept-Encoding")
 	ae := r.Header.Get("Accept-Encoding")
 	for _, enc := range []struct{ name, suffix string }{{"br", ".br"}, {"gzip", ".gz"}} {
-		if !strings.Contains(ae, enc.name) {
+		if !acceptsEncoding(ae, enc.name) {
 			continue
 		}
 		f, err := fs.Open(p + enc.suffix)
@@ -414,9 +425,32 @@ func tryPrecompressed(w http.ResponseWriter, r *http.Request, fs http.FileSystem
 			w.Header().Set("Content-Type", ctype)
 		}
 		w.Header().Set("Content-Encoding", enc.name)
-		w.Header().Add("Vary", "Accept-Encoding")
 		http.ServeContent(w, r, p, stat.ModTime(), rs)
 		_ = f.Close()
+		return true
+	}
+	return false
+}
+
+// acceptsEncoding reports whether the Accept-Encoding header value ae lists the content coding name
+// with a non-zero quality value (RFC 9110 section 12.5.3). Tokens are matched whole and
+// case-insensitively, so "br;q=0" and tokens that merely contain the name do not match. A coding
+// with an unparseable q-value is treated as refused. The wildcard "*" is not honoured: only
+// codings the client names explicitly are served.
+func acceptsEncoding(ae, name string) bool {
+	for _, item := range strings.Split(ae, ",") {
+		token, params, _ := strings.Cut(item, ";")
+		if !strings.EqualFold(strings.TrimSpace(token), name) {
+			continue
+		}
+		for _, param := range strings.Split(params, ";") {
+			k, v, ok := strings.Cut(strings.TrimSpace(param), "=")
+			if !ok || !strings.EqualFold(strings.TrimSpace(k), "q") {
+				continue
+			}
+			q, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+			return err == nil && q > 0
+		}
 		return true
 	}
 	return false
@@ -580,20 +614,33 @@ func newNonce() string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-// withScriptNonce appends 'nonce-<nonce>' to the policy's script-src directive. A policy without
-// script-src is returned unchanged: adding one would replace the default-src fallback for scripts.
-// The nonce only lets markup carrying it run; this server never inlines scripts itself, so it serves
-// edges that inject scripts and parse the nonce from this header (Cloudflare does).
+// withScriptNonce appends 'nonce-<nonce>' to the policy's script-src and script-src-elem
+// directives (script-src-elem takes precedence for <script> elements, so a nonce only in script-src
+// would not let an injected script run). A policy without either directive is returned unchanged:
+// adding one would replace the default-src fallback for scripts. Only the first occurrence of a
+// directive counts (CSP ignores repeats), and a directive that is exactly 'none' is left alone so a
+// "no scripts" policy stays that way. A nonce makes browsers ignore 'unsafe-inline' in the directive
+// it joins. The nonce only lets markup carrying it run; this server never inlines scripts itself, so
+// it serves edges that inject scripts and parse the nonce from this header (Cloudflare does).
 func withScriptNonce(csp, nonce string) string {
 	parts := strings.Split(csp, ";")
+	seen := map[string]bool{}
 	for i, p := range parts {
 		fields := strings.Fields(p)
-		if len(fields) > 0 && strings.EqualFold(fields[0], "script-src") {
-			parts[i] = strings.TrimRight(p, " ") + " 'nonce-" + nonce + "'"
-			return strings.Join(parts, ";")
+		if len(fields) == 0 {
+			continue
 		}
+		name := strings.ToLower(fields[0])
+		if (name != "script-src" && name != "script-src-elem") || seen[name] {
+			continue
+		}
+		seen[name] = true
+		if len(fields) == 2 && strings.EqualFold(fields[1], "'none'") {
+			continue
+		}
+		parts[i] = strings.TrimRight(p, " ") + " 'nonce-" + nonce + "'"
 	}
-	return csp
+	return strings.Join(parts, ";")
 }
 
 // responseWriter wraps http.ResponseWriter to capture the HTTP status code written

@@ -6,7 +6,7 @@ A minimal scratch container image (~5 MB) that serves static files via a fully s
 - **Non-root** — runs as UID 65534 (`nobody`)
 - **No external dependencies** — pure Go standard library; `CGO_ENABLED=0`
 - **Kubernetes-native** — `GET /healthz` probe, graceful SIGTERM shutdown, ConfigMap-mountable content
-- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` on every response
+- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` on every response; HSTS and `Permissions-Policy` by default; CSP when configured
 - **0BSD licence** — do whatever you want
 
 ## Quick start
@@ -42,10 +42,10 @@ docker.io/meddleware/static-server:v0.1.0
 | `NOT_FOUND_PAGE` | (empty) | Page served with status `404` for unknown navigation routes, e.g. `/404.html`; empty = plain 404. Ignored when `SPA_FALLBACK` is on; assets still get a plain 404 |
 | `CACHE_IMMUTABLE_PREFIX` | (empty) | Path prefix whose files get one-year immutable `Cache-Control` (fingerprinted assets, e.g. `/assets/`); html/nav get `no-cache` |
 | `CONTENT_SECURITY_POLICY` | (unset) | Sets the `Content-Security-Policy` header when provided |
-| `CSP_NONCE` | `true` | Appends a fresh `'nonce-…'` to the policy's `script-src` on every response. The server inlines no scripts; the nonce lets an edge that injects scripts and reads the nonce from this header (Cloudflare JavaScript Detections / Bot Fight Mode) run them without `'unsafe-inline'`. A policy without `script-src` is left unchanged. |
+| `CSP_NONCE` | `true` | Appends a fresh `'nonce-…'` to the policy's `script-src` and `script-src-elem` on every response. The server inlines no scripts; the nonce lets an edge that injects scripts and reads the nonce from this header (Cloudflare JavaScript Detections / Bot Fight Mode) run them without `'unsafe-inline'`. A policy with neither directive is left unchanged, as is a directive that is `'none'`. **A nonce makes browsers ignore `'unsafe-inline'` in the directive it joins**: if your own pages rely on inline scripts, allow them by hash or set `CSP_NONCE=false`. |
 | `STRICT_TRANSPORT_SECURITY` | `max-age=31536000; includeSubDomains` | `Strict-Transport-Security` value; set to empty to omit the header |
 | `PERMISSIONS_POLICY` | `camera=(), geolocation=(), microphone=(), payment=()` | `Permissions-Policy` value; set to empty to omit the header |
-| `PRECOMPRESSED` | `false` | Serve a sibling `.br`/`.gz` asset when the client accepts it and it exists |
+| `PRECOMPRESSED` | `false` | Serve a sibling `.br`/`.gz` asset when the client accepts it (a coding refused with `q=0` is not served) and it exists. Asset responses carry `Vary: Accept-Encoding` |
 
 See [`.env.example`](.env.example) for a copy-paste template.
 
@@ -239,7 +239,8 @@ spec:
 ### Prerequisites
 
 - Docker with [buildx](https://docs.docker.com/buildx/working-with-buildx/) for multi-platform builds
-- Go 1.24+ for local development and testing
+- Go 1.26+ for local development and testing (`go.mod` names the exact toolchain)
+- `curl` and Docker or Podman for the container smoke test
 
 ### Using the Makefile
 
@@ -247,6 +248,7 @@ spec:
 make test                        # go test -race ./...
 make vet                         # go vet ./...
 make run                         # run locally on :8080
+make smoke                       # build the image and smoke-test it (CONTAINER_ENGINE=podman works)
 
 make build VERSION=v0.1.0        # build local single-platform image
 make build-multi VERSION=v0.1.0  # build + push multi-platform to all registries
@@ -291,7 +293,7 @@ No file editing required — forks and operators pass only what differs from the
 | `DOCUMENTATION_URL` | `https://github.com/meddleware-org/static-server#readme` |
 | `IMAGE_URL` | `https://quay.io/meddleware-org/static-server` |
 
-**index.html template variables** (substituted into the default page at build time via `envsubst`):
+**index.html template variables** (substituted into the default page at build time with `sed`; the raw template keeps the `${VAR}` placeholders for `envsubst` in an initContainer):
 
 | ARG | Default | Used in |
 | --- | ------- | ------- |
@@ -313,8 +315,8 @@ The raw template is preserved at `/app/default/index.html.tpl` inside the image 
 
 | Workflow | Trigger | Action |
 | -------- | ------- | ------ |
-| `ci.yml` | push, pull_request | `go vet` + `go test -race` |
-| `publish.yml` | tag push `v*` | multi-platform build + push to quay.io, Docker Hub, and self-hosted registry |
+| `go-ci.yml` | push, pull_request, and called by the release | golangci-lint, `go vet` + `go test -race`, govulncheck, Trivy filesystem scan, and an image job that builds the image and runs `scripts/smoke.sh` against it |
+| `docker-publish.yml` | tag push `v*` | runs `go-ci.yml`, then multi-platform build + push to quay.io and Docker Hub (scanned, cosign-signed, SBOM and provenance attested) and a best-effort self-hosted registry |
 
 See [`.github/workflows/`](.github/workflows/) for the full workflow YAML. Registry credentials
 and org coordinates are GitHub repository variables/secrets — no YAML edits needed for forks.

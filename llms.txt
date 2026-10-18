@@ -13,13 +13,13 @@ ConfigMap volume mounts. Any operator can override content by mounting their own
 
 ## Source files
 
-- `main.go` — HTTP server: cascade filesystem, SPA history fallback, cache-control, precompressed asset serving, MIME registration, security headers (+optional CSP), GET/HEAD-only, structured slog logging, graceful shutdown, `/healthz`, `/version`, `-healthcheck` one-shot flag
-- `main_test.go` — unit tests covering all endpoints, middleware, cascade filesystem, and directory-listing prevention
-- `Dockerfile` — multi-stage build (golang:1.26-bookworm builder → scratch runtime); OCI labels injected via ARG; baked-in defaults copied to `/app/default`
-- `go.mod` — module `github.com/meddleware-org/static-server`, Go 1.24, stdlib-only
+- `main.go` — HTTP server: cascade filesystem rooted with `os.OpenRoot`, dot-file hiding, SPA history fallback, clean URLs, 404 page, cache-control, precompressed asset serving, MIME registration, security headers (+optional CSP with a script nonce), GET/HEAD-only, structured slog logging, graceful shutdown, `/healthz`, `/version`, `-healthcheck` one-shot flag
+- `main_test.go` — real-HTTP tests (`httptest`) covering all endpoints, middleware, cascade filesystem, path confinement, header and cache behaviour, and that every option is documented in every reference surface
+- `Dockerfile` — multi-stage build (digest-pinned golang bookworm builder, checked against the `go.mod` toolchain → scratch runtime); OCI labels injected via ARG; baked-in defaults copied to `/app/default`
+- `go.mod` — module `github.com/meddleware-org/static-server`, Go 1.26 (toolchain pinned), stdlib-only
 - `Makefile` — parameterised build/push/test targets; all registry coordinates and OCI metadata are Make variables
 - `.env.example` — documents all configurable environment variables with defaults
-- `public/index.html` — envsubst template: all identifying values are `${VAR}` placeholders; rendered at build time into `/app/default/index.html`; raw template preserved at `/app/default/index.html.tpl` for initContainer use
+- `public/index.html` — template: all identifying values are `${VAR}` placeholders; rendered with `sed` at build time into `/app/default/index.html`; raw template preserved at `/app/default/index.html.tpl` for initContainer use (`envsubst`)
 - `public/style.css` — default page stylesheet; served from FALLBACK_DIR; overridable via SERVE_DIR mount
 - `public/script.js` — sets `<link rel="canonical">` dynamically; served from FALLBACK_DIR
 - `public/llms.txt` — machine-readable API reference served from the running container at `/llms.txt`
@@ -27,8 +27,9 @@ ConfigMap volume mounts. Any operator can override content by mounting their own
 - `SECURITY.md` — vulnerability reporting policy
 - `CHANGELOG.md` — version history
 - `LICENSE` — BSD Zero Clause (0BSD)
-- `.github/workflows/ci.yml` — CI: go vet + go test on push/PR
-- `.github/workflows/publish.yml` — publish: multi-platform image push on version tag
+- `scripts/smoke.sh` — container smoke test: runs a built image and checks user, probes, headers, a 404 and the cache headers
+- `.github/workflows/go-ci.yml` — CI on push/PR (and reused by the release): lint, vet + race tests, govulncheck, Trivy filesystem scan, image build + smoke test
+- `.github/workflows/docker-publish.yml` — release: on a `v*` tag runs the CI workflow, then pushes the multi-platform image, scans, signs and attests it
 
 ## Runtime configuration
 
@@ -40,18 +41,22 @@ Environment variables (all optional; defaults shown):
                                (set to empty string to disable the cascade)
     SPA_FALLBACK=false      Serve index.html (200) for unknown extensionless navigation
                             routes; asset paths (with an extension) still 404 on miss
+    CLEAN_URLS=false        Serve /<path> from /<path>.html when /<path> does not exist
+    NOT_FOUND_PAGE=         Page served with status 404 for unknown navigation routes (e.g. /404.html);
+                            ignored when SPA_FALLBACK is on
     CACHE_IMMUTABLE_PREFIX= Path prefix whose files get one-year immutable caching
                             (fingerprinted assets, e.g. /assets/); html/nav get no-cache
     CONTENT_SECURITY_POLICY=  Value of the Content-Security-Policy header (unset by default)
-    CSP_NONCE=true            Append a fresh 'nonce-…' to the CSP's script-src on every response
+    CSP_NONCE=true            Append a fresh 'nonce-…' to the CSP's script-src and script-src-elem on every
+                              response (a nonce makes browsers ignore 'unsafe-inline' there)
     STRICT_TRANSPORT_SECURITY=  Strict-Transport-Security value (default max-age=31536000; includeSubDomains; empty omits)
     PERMISSIONS_POLICY=  Permissions-Policy value (default camera=(), geolocation=(), microphone=(), payment=(); empty omits)
-    PRECOMPRESSED=false     Serve sibling .br/.gz assets when the client accepts them
+    PRECOMPRESSED=false     Serve sibling .br/.gz assets when the client accepts them (q=0 refuses)
 
 ## index.html template variables
 
-public/index.html is an envsubst template. All identifying values use ${VAR} placeholders
-substituted at build time (via gettext-base envsubst in the builder stage). The rendered
+public/index.html is a template. All identifying values use ${VAR} placeholders
+substituted at build time (with sed in the builder stage). The rendered
 file lands at /app/default/index.html; the raw template is preserved at
 /app/default/index.html.tpl for operator use in initContainers.
 
@@ -84,8 +89,9 @@ file lands at /app/default/index.html; the raw template is preserved at
     Content-Security-Policy: <CONTENT_SECURITY_POLICY>   (only when configured)
     Strict-Transport-Security: <STRICT_TRANSPORT_SECURITY>   (default on)
     Permissions-Policy: <PERMISSIONS_POLICY>   (default on)
-    Cache-Control:           immutable for CACHE_IMMUTABLE_PREFIX; no-cache for html/nav
-    Content-Encoding + Vary: on precompressed hits when PRECOMPRESSED=true
+    Cache-Control:           immutable for CACHE_IMMUTABLE_PREFIX; no-cache for html/nav; absent on errors
+    Content-Encoding + Vary: Content-Encoding on precompressed hits; Vary: Accept-Encoding on asset paths
+                             when PRECOMPRESSED=true
 
 Only GET and HEAD are accepted; other methods return 405 with Allow: GET, HEAD.
 
@@ -111,6 +117,7 @@ Only GET and HEAD are accepted; other methods return 405 with Allow: GET, HEAD.
     make build-multi VERSION=v0.1.0     # multi-platform push to all registries
     make test                            # go test -race ./...
     make vet                             # go vet ./...
+    make smoke                           # build the image and run scripts/smoke.sh against it
 
 ## Links
 

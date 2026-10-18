@@ -308,6 +308,16 @@ docker build \
           <td>Serve <code>index.html</code> (200) for unknown <em>navigation</em> routes (extensionless paths), enabling client-side routing and deep-link refresh. Asset requests (paths with an extension) still return 404 on miss.</td>
         </tr>
         <tr>
+          <td><code>CLEAN_URLS</code></td>
+          <td><code>false</code></td>
+          <td>Serve <code>/&lt;path&gt;</code> from <code>/&lt;path&gt;.html</code> when <code>/&lt;path&gt;</code> itself does not exist, for static-site generators that link extensionless URLs (e.g. VitePress <code>cleanUrls</code>).</td>
+        </tr>
+        <tr>
+          <td><code>NOT_FOUND_PAGE</code></td>
+          <td>(empty)</td>
+          <td>Page served with status <code>404</code> for unknown navigation routes, e.g. <code>/404.html</code>. Empty gives a plain 404. Ignored when <code>SPA_FALLBACK</code> is on; assets still get a plain 404.</td>
+        </tr>
+        <tr>
           <td><code>CACHE_IMMUTABLE_PREFIX</code></td>
           <td>(empty)</td>
           <td>Path prefix whose files get <code>Cache-Control: public, max-age=31536000, immutable</code> (fingerprinted assets, e.g. <code>/assets/</code>). <code>index.html</code> and navigation routes get <code>no-cache</code>. Empty disables immutable caching.</td>
@@ -318,9 +328,24 @@ docker build \
           <td>When set, adds the <code>Content-Security-Policy</code> response header with this value.</td>
         </tr>
         <tr>
+          <td><code>CSP_NONCE</code></td>
+          <td><code>true</code></td>
+          <td>Appends a fresh <code>'nonce-…'</code> to the policy's <code>script-src</code> and <code>script-src-elem</code> on every response, so an edge that injects scripts (e.g. Cloudflare JavaScript Detections) can run them without <code>'unsafe-inline'</code>. A nonce makes browsers ignore <code>'unsafe-inline'</code> in that directive. A policy without either directive, and a directive that is <code>'none'</code>, are left unchanged. No effect without a CSP.</td>
+        </tr>
+        <tr>
+          <td><code>STRICT_TRANSPORT_SECURITY</code></td>
+          <td><code>max-age=31536000; includeSubDomains</code></td>
+          <td>Value of the <code>Strict-Transport-Security</code> header. Set to empty to omit it.</td>
+        </tr>
+        <tr>
+          <td><code>PERMISSIONS_POLICY</code></td>
+          <td><code>camera=(), geolocation=(), microphone=(), payment=()</code></td>
+          <td>Value of the <code>Permissions-Policy</code> header. Set to empty to omit it.</td>
+        </tr>
+        <tr>
           <td><code>PRECOMPRESSED</code></td>
           <td><code>false</code></td>
-          <td>Serve a sibling <code>.br</code>/<code>.gz</code> asset when the client accepts that encoding and the file exists, preserving the original <code>Content-Type</code>.</td>
+          <td>Serve a sibling <code>.br</code>/<code>.gz</code> asset when the client accepts that encoding (a coding refused with <code>q=0</code> is not served) and the file exists, preserving the original <code>Content-Type</code>. Asset responses carry <code>Vary: Accept-Encoding</code>.</td>
         </tr>
       </tbody>
     </table>
@@ -352,7 +377,7 @@ docker build \
     </table>
 
     <h3>Response Headers</h3>
-    <p>The first three security headers are emitted on every response; the rest are conditional:</p>
+    <p>The first three security headers are emitted on every response; the HSTS and Permissions-Policy defaults can be switched off with an empty variable, and the rest are conditional:</p>
     <table>
       <thead>
         <tr><th>Header</th><th>Value</th></tr>
@@ -361,9 +386,11 @@ docker build \
         <tr><td><code>X-Content-Type-Options</code></td><td><code>nosniff</code> (always)</td></tr>
         <tr><td><code>X-Frame-Options</code></td><td><code>SAMEORIGIN</code> (always)</td></tr>
         <tr><td><code>Referrer-Policy</code></td><td><code>strict-origin-when-cross-origin</code> (always)</td></tr>
-        <tr><td><code>Content-Security-Policy</code></td><td>value of <code>CONTENT_SECURITY_POLICY</code> (only when set)</td></tr>
-        <tr><td><code>Cache-Control</code></td><td><code>immutable</code> under <code>CACHE_IMMUTABLE_PREFIX</code>; <code>no-cache</code> for html/navigation</td></tr>
-        <tr><td><code>Content-Encoding</code>, <code>Vary</code></td><td>on precompressed hits when <code>PRECOMPRESSED=true</code></td></tr>
+        <tr><td><code>Content-Security-Policy</code></td><td>value of <code>CONTENT_SECURITY_POLICY</code> (only when set), with a fresh script nonce when <code>CSP_NONCE</code> is on</td></tr>
+        <tr><td><code>Strict-Transport-Security</code></td><td>value of <code>STRICT_TRANSPORT_SECURITY</code> (on by default)</td></tr>
+        <tr><td><code>Permissions-Policy</code></td><td>value of <code>PERMISSIONS_POLICY</code> (on by default)</td></tr>
+        <tr><td><code>Cache-Control</code></td><td><code>immutable</code> under <code>CACHE_IMMUTABLE_PREFIX</code>; <code>no-cache</code> for html/navigation; never present on error responses</td></tr>
+        <tr><td><code>Content-Encoding</code>, <code>Vary</code></td><td><code>Content-Encoding</code> on precompressed hits; <code>Vary: Accept-Encoding</code> on asset paths when <code>PRECOMPRESSED=true</code></td></tr>
       </tbody>
     </table>
 
@@ -371,6 +398,8 @@ docker build \
     <ul>
       <li><strong>Methods.</strong> Only <code>GET</code> and <code>HEAD</code> are accepted; any other method returns <code>405</code> with <code>Allow: GET, HEAD</code>.</li>
       <li><strong>SPA fallback</strong> (<code>SPA_FALLBACK=true</code>). An unknown navigation route — a GET whose final path segment has no extension — serves <code>index.html</code> with 200, so client-side routing and deep-link refresh work. Asset requests (paths with an extension) still 404 on miss, so a broken build is not masked.</li>
+      <li><strong>Clean URLs and 404 page</strong> (<code>CLEAN_URLS</code>, <code>NOT_FOUND_PAGE</code>). An unknown extensionless path is served from <code>&lt;path&gt;.html</code>; an unknown navigation route otherwise gets the configured page with status 404.</li>
+      <li><strong>Paths stay in the serve root.</strong> Each directory is opened with <code>os.OpenRoot</code>, so a symlink that leaves it is a 404; dot-files and dot-directories (<code>/.env</code>, <code>/.git/</code>) are a 404 except <code>/.well-known/</code>.</li>
       <li><strong>Correct MIME types.</strong> Types are registered at startup (scratch images have no <code>/etc/mime.types</code>), including <code>.wasm</code> → <code>application/wasm</code> so WebAssembly streaming instantiation works.</li>
       <li><strong>Cascade filesystem.</strong> Files are resolved in <code>SERVE_DIR</code> first. If not found, the request falls through to <code>FALLBACK_DIR</code>. This enables partial overlays — mount only the files you want to customise in <code>SERVE_DIR</code> and let <code>FALLBACK_DIR</code> supply the rest.</li>
       <li><strong>Directory listing is disabled.</strong> A request for a directory path returns 404 unless that directory contains an <code>index.html</code> file (checked in <code>SERVE_DIR</code> first, then <code>FALLBACK_DIR</code>).</li>

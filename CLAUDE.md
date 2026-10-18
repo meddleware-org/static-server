@@ -7,7 +7,7 @@ Instructions for Claude Code. See [AGENTS.md](AGENTS.md) for general agent conte
 
 - **Module:** `github.com/meddleware-org/static-server`
 - **License:** BSD Zero Clause (0BSD)
-- **Language:** Go 1.24+, stdlib-only
+- **Language:** Go 1.26 (`go.mod` pins the toolchain), stdlib-only
 - **Runtime base:** `scratch` (zero OS footprint)
 
 This is a standalone OSS project. When extracted from any monorepo, it has no
@@ -53,6 +53,9 @@ in all of the following before the task is considered complete:
 - `.env.example` — if a new configurable value is added
 - `README.md` — if a user-visible feature or configuration changes
 - `public/index.html` — API reference tables embedded in the default page
+- `AGENTS.md` — the variable table
+
+`TestDocsListEveryOption` enforces this for every environment variable read in `main.go`.
 
 ## What not to do
 

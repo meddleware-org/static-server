@@ -23,9 +23,9 @@ ARG DOCUMENTATION_URL="https://github.com/meddleware-org/static-server#readme"
 ARG IMAGE_URL="https://quay.io/meddleware-org/static-server"
 
 # index.html template variables — all identifying values in the default page.
-# The template (public/index.html) uses ${VAR} placeholders; envsubst renders
+# The template (public/index.html) uses ${VAR} placeholders; sed (below) renders
 # the final /app/default/index.html at build time. The raw template is preserved
-# at /app/default/index.html.tpl for operator use in initContainers.
+# at /app/default/index.html.tpl for operator use in initContainers (envsubst).
 ARG SITE_TITLE="static-server"
 ARG SITE_KEYWORDS="static-server, container, docker, kubernetes, go, golang, scratch, file server, oci, configmap"
 ARG SITE_AUTHOR_URL="https://meddleware.co.uk"
@@ -94,7 +94,7 @@ COPY --from=builder /build/server /server
 # operator content. FALLBACK_DIR (/app/default) catches any file not found
 # in SERVE_DIR — enabling partial overlays (e.g. mount only index.html and
 # let the baked-in style.css / script.js / llms.txt serve from the fallback).
-# index.html.tpl is the raw envsubst template for initContainer use.
+# index.html.tpl is the raw template for initContainer use (envsubst).
 COPY --from=builder /tmp/public/ /app/default/
 
 USER 65534

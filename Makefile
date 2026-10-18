@@ -1,5 +1,6 @@
 IMAGE   := static-server
 VERSION ?= dev
+CONTAINER_ENGINE ?= docker
 
 # ── Registry coordinates ──────────────────────────────────────────────────────
 # Each registry and its namespace are independently overridable.
@@ -27,7 +28,7 @@ DOCUMENTATION_URL ?= https://github.com/meddleware-org/static-server\#readme
 IMAGE_URL         ?= https://quay.io/meddleware-org/static-server
 
 # ── index.html template variables ────────────────────────────────────────────
-# envsubst renders these into /app/default/index.html at build time.
+# The Dockerfile renders these into /app/default/index.html at build time with sed.
 # The raw template is preserved at /app/default/index.html.tpl.
 SITE_TITLE        ?= static-server
 SITE_KEYWORDS     ?= static-server, container, docker, kubernetes, go, golang, scratch, file server, oci, configmap
@@ -50,7 +51,7 @@ BUILD_ARGS := \
   --build-arg IMAGE_REF=$(IMAGE_REF) \
   --build-arg SCHEMA_LICENSE_URL=$(SCHEMA_LICENSE_URL)
 
-.PHONY: build push build-multi test vet run
+.PHONY: build push build-multi test vet run smoke
 
 ## build: build image locally for the current platform
 build:
@@ -72,6 +73,11 @@ test:
 ## vet: run go vet
 vet:
 	go vet ./...
+
+## smoke: build the image and run scripts/smoke.sh against it (CONTAINER_ENGINE=podman for rootless podman)
+smoke:
+	$(CONTAINER_ENGINE) build --build-arg VERSION=smoke -t $(IMAGE):smoke .
+	CONTAINER_ENGINE=$(CONTAINER_ENGINE) bash scripts/smoke.sh $(IMAGE):smoke
 
 ## run: run the server locally (serves public/ on :8080)
 run:

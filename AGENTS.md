@@ -18,9 +18,9 @@ module is stdlib-only (`go.mod` has no `require` stanzas).
 | Path | Purpose |
 | --- | --- |
 | `main.go` | All server logic: cascade filesystem, graceful shutdown, middleware, endpoints |
-| `main_test.go` | Full test suite — 15 tests covering all endpoints, middleware, and cascade behaviour |
+| `main_test.go` | Full test suite over real HTTP — endpoints, middleware, cascade, path confinement, headers, cache behaviour, and the "every option is documented" check |
 | `go.mod` | Module declaration (`github.com/meddleware-org/static-server`); no external dependencies |
-| `Dockerfile` | Multi-stage build: `golang:1.26-bookworm` builder → `scratch` runtime |
+| `Dockerfile` | Multi-stage build: digest-pinned `golang` bookworm builder (checked against the `go.mod` toolchain) → `scratch` runtime |
 | `Makefile` | Build, test, and push targets; all registry coordinates and metadata are Make variables |
 | `.env.example` | All configurable values with defaults and descriptions |
 | `.dockerignore` | Excludes build artifacts and project files from the Docker build context |
@@ -29,13 +29,14 @@ module is stdlib-only (`go.mod` has no `require` stanzas).
 | `SECURITY.md` | Vulnerability reporting policy |
 | `CHANGELOG.md` | Version history following Keep a Changelog format |
 | `llms.txt` | Repo-root machine-readable project description (llmstxt.org spec) |
-| `public/index.html` | envsubst template — all identifying values are `${VAR}` placeholders |
+| `public/index.html` | Template — all identifying values are `${VAR}` placeholders, rendered with `sed` at build time |
 | `public/style.css` | Stylesheet for the default landing page |
 | `public/script.js` | Sets `<link rel="canonical">` dynamically |
 | `public/llms.txt` | Machine-readable API reference served at `/llms.txt` |
 | `public/robots.txt` | Crawler policy (`Allow: /`) |
-| `.github/workflows/ci.yml` | CI: `go vet` + `go test -race` on push and pull requests |
-| `.github/workflows/publish.yml` | Publish: multi-platform image push to three registries on version tag |
+| `scripts/smoke.sh` | Container smoke test: runs a built image and checks user, probes, headers, a 404 and the cache headers (`docker` or `podman`) |
+| `.github/workflows/go-ci.yml` | CI on push and pull requests, reused by the release: lint, vet + race tests, govulncheck, Trivy filesystem scan, image build + smoke test |
+| `.github/workflows/docker-publish.yml` | Release on a `v*` tag: runs `go-ci.yml`, then pushes the multi-platform image, scans, signs and attests it |
 
 ## Key concepts
 
@@ -68,9 +69,9 @@ have no `wget` or `curl`.
 ### `index.html` template
 
 `public/index.html` is an envsubst template. All identifying values use `${VAR}` placeholders.
-The Dockerfile builder installs `gettext-base` and runs `envsubst` to render `/app/default/index.html`
-at build time. The raw template is preserved at `/app/default/index.html.tpl` for operator
-use in initContainers.
+The Dockerfile builder renders `/app/default/index.html` with `sed` at build time (no package
+install). The raw template is preserved at `/app/default/index.html.tpl` for operator use in
+initContainers, where `envsubst` can render it.
 
 ## Commands
 
@@ -80,6 +81,9 @@ go test -v -race ./...
 
 # Static analysis (must be clean)
 go vet ./...
+
+# Container smoke test (builds the image; CONTAINER_ENGINE=podman works rootless)
+make smoke
 
 # Run locally
 go run .
@@ -104,7 +108,7 @@ make build-multi VERSION=v0.1.0 \
 - **Single file.** All server logic stays in `main.go`. Do not split into packages unless the
   file significantly exceeds 500 lines.
 - **Test every behaviour change.** Add or update tests in `main_test.go` for any change to
-  server behaviour. Use `newHandler(fs)` to build the full handler stack in tests.
+  server behaviour. Use `newHandler(cfg, fs)` to build the full handler stack in tests.
 - **Go doc on every symbol.** Every exported and unexported type, function, variable, and
   method must have a Go doc comment. Comments must start with the symbol name and be suitable
   for `go doc` output.
@@ -112,7 +116,9 @@ make build-multi VERSION=v0.1.0 \
 - **Security headers on every response.** `secureHeaders` wraps the top-level mux; do not
   bypass it for any route.
 - **Keep documentation in sync.** Any API or configuration change must be reflected in
-  `public/llms.txt`, `llms.txt`, `CHANGELOG.md`, `.env.example`, and `README.md`.
+  `public/llms.txt`, `llms.txt`, `CHANGELOG.md`, `.env.example`, `README.md`, `public/index.html`
+  and the variable table below. `TestDocsListEveryOption` fails when an option read in `main.go`
+  is missing from one of them.
 
 ## Runtime environment variables
 
@@ -120,7 +126,16 @@ make build-multi VERSION=v0.1.0 \
 | --- | --- | --- |
 | `PORT` | `8080` | TCP listen port |
 | `SERVE_DIR` | `/app/public` | Primary serve directory; mount operator content here |
-| `FALLBACK_DIR` | `/app/default` | Fallback directory; empty string disables cascade |
+| `FALLBACK_DIR` | `/app/default` (set by the image; `""` in the bare binary) | Fallback directory; empty string disables cascade |
+| `SPA_FALLBACK` | `false` | Serve `index.html` (200) for unknown navigation routes |
+| `CLEAN_URLS` | `false` | Serve `/<path>` from `/<path>.html` when `/<path>` does not exist |
+| `NOT_FOUND_PAGE` | (empty) | Page served with status 404 for unknown navigation routes; ignored when `SPA_FALLBACK` is on |
+| `CACHE_IMMUTABLE_PREFIX` | (empty) | Path prefix whose files get one-year immutable caching |
+| `CONTENT_SECURITY_POLICY` | (unset) | `Content-Security-Policy` header value |
+| `CSP_NONCE` | `true` | Fresh script nonce in the CSP's `script-src` / `script-src-elem` on every response |
+| `STRICT_TRANSPORT_SECURITY` | `max-age=31536000; includeSubDomains` | HSTS value; empty omits the header |
+| `PERMISSIONS_POLICY` | `camera=(), geolocation=(), microphone=(), payment=()` | `Permissions-Policy` value; empty omits the header |
+| `PRECOMPRESSED` | `false` | Serve sibling `.br` / `.gz` assets (honours `q=0`; asset responses carry `Vary`) |
 
 ## index.html template variables
 
