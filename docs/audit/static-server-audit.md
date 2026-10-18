@@ -43,7 +43,7 @@ separately).
   token-deployer-ui, treasury-ui, walrus-ui. Every consumer Dockerfile sets `CONTENT_SECURITY_POLICY`
   and `CACHE_IMMUTABLE_PREFIX`; the SPAs set `SPA_FALLBACK=true`. Deployed images were cosign-verified
   2026-10-09 (`bootstrap/images/verify-digests.sh`, 16/16 valid). None sets `PRECOMPRESSED`.
-- **Fix wave 2026-10-18:** `0.1.8` is prepared locally (commit pending; not tagged or published). It
+- **Fix wave 2026-10-18:** `0.1.8` is prepared locally (commit `ed7c737`; not tagged or published). It
   changes the base image, so the consumers move to it together once released.
 - Consumer pods set `automountServiceAccountToken: false` (every `post-bootstrap/*/base` deployment and
   the `k8s/base` status and registry pods).
@@ -88,7 +88,7 @@ corpus-format audit.
 > **Access note (2026-10-09):** read-only re-verification of `workspace/repos/static-server` at `main`
 > (`e1a71c5`). No code, commit or push was made by this pass.
 >
-> **Access note (2026-10-18):** the fix wave edited this repository locally (0.1.8, commit pending); no
+> **Access note (2026-10-18):** the fix wave edited this repository locally (0.1.8, commit `ed7c737`); no
 > tag, push or publish.
 
 ---
@@ -98,7 +98,7 @@ corpus-format audit.
 `main.go` (709 lines) holds all the logic. There are 44 tests (`main_test.go`, 1225 lines) over real
 HTTP (`httptest`). Since the 2026-10-03 pass the three Low findings were fixed and released (0.1.6 and
 0.1.7), the Go toolchain advisory found on 2026-10-09 was fixed (0.1.7), and the remaining Info items
-were re-checked and given reasoned dispositions. The 2026-10-18 fix wave (0.1.8, commit pending) closed
+were re-checked and given reasoned dispositions. The 2026-10-18 fix wave (0.1.8, commit `ed7c737`) closed
 F5, F6 and F10, found and fixed F12 (the 405 response lacked the security headers), and fixed the
 nonce and `Cache-Control` edge cases of F4 and F7.
 
@@ -382,7 +382,7 @@ scan regressions can reach a tag.
   reused if an edge caches an HTML response with its header. This matters only if there is an HTML
   injection point, and this server has none.
 
-**Remediation / evidence:** 2026-10-18 (0.1.8, commit pending): `withScriptNonce` now appends the nonce to
+**Remediation / evidence:** 2026-10-18 (0.1.8, commit `ed7c737`): `withScriptNonce` now appends the nonce to
 `script-src` and `script-src-elem` (first occurrence of each only; a directive that is exactly `'none'` is
 left alone). Pinned by `TestWithScriptNonce` (script-src-elem, repeated directives, `'none'`). The
 `'unsafe-inline'` interaction is documented in the package comment, README, `.env.example`, `llms.txt`,
@@ -405,7 +405,7 @@ code for no stated risk. What stays open is the default (OQ2). The 2026-10-09 re
 
 ### F5 — Precompressed negotiation ignores `q=0`, and only one variant carries `Vary`
 
-**Severity:** Info (latent: no consumer sets `PRECOMPRESSED`)   **Disposition:** RESOLVED (0.1.8, commit pending)
+**Severity:** Info (latent: no consumer sets `PRECOMPRESSED`)   **Disposition:** RESOLVED (0.1.8, commit `ed7c737`)
 **Where:** `main.go:395-457` (`tryPrecompressed`, `acceptsEncoding`).
 
 **Issue / Impact (probe-verified):**
@@ -416,7 +416,7 @@ code for no stated risk. What stays open is the default (OQ2). The 2026-10-09 re
   for the same URL has no `Vary`, so a shared cache can store it unkeyed. RFC 9110 expects `Vary` on
   every variant.
 
-**Remediation / evidence:** 0.1.8 (commit pending) implements the stated fix before any consumer enables
+**Remediation / evidence:** 0.1.8 (commit `ed7c737`) implements the stated fix before any consumer enables
 the feature. `acceptsEncoding` splits `Accept-Encoding` into whole tokens, matches them case-insensitively
 and refuses a coding whose q-value is `0` or unparseable (the wildcard is not honoured: only codings named
 explicitly are served). `tryPrecompressed` adds `Vary: Accept-Encoding` to every GET/HEAD response for a path with
@@ -428,7 +428,7 @@ consumer enabled it (no `PRECOMPRESSED` in any consumer Dockerfile or `post-boot
 
 ### F6 — Docs-discipline drift (CLAUDE.md requires every option in all reference surfaces)
 
-**Severity:** Info   **Disposition:** RESOLVED (0.1.8, commit pending)
+**Severity:** Info   **Disposition:** RESOLVED (0.1.8, commit `ed7c737`)
 **Where:** CLAUDE.md "Documentation discipline" (`public/llms.txt`, `llms.txt`, CHANGELOG,
 `.env.example`, README, `public/index.html`).
 
@@ -452,7 +452,7 @@ Also:
 The served `/llms.txt` and default page are the machine-readable API reference bots consume. They
 currently omit five of the server's options.
 
-**Remediation / evidence:** 0.1.8 (commit pending). The table above is the state found on 2026-10-09 (re-checked
+**Remediation / evidence:** 0.1.8 (commit `ed7c737`). The table above is the state found on 2026-10-09 (re-checked
 by grep of the five option names in each surface). Fixed: the five options are now in `public/llms.txt`,
 `public/index.html`, `llms.txt` and `.env.example` (and `AGENTS.md`'s variable table, which listed only three
 of the twelve); the three comment slips are corrected (the package comment gives `FALLBACK_DIR` as `""` in the
@@ -546,7 +546,7 @@ by tag.
 
 ### F10 — The Dockerfile is built and exercised only at release, not in PR CI
 
-**Severity:** Info   **Disposition:** RESOLVED (0.1.8, commit pending)
+**Severity:** Info   **Disposition:** RESOLVED (0.1.8, commit `ed7c737`)
 **Where:** `.github/workflows/go-ci.yml` (no `docker build` job at the time); `.github/dependabot.yml` (docker
 ecosystem, weekly, grouped); IMG lens §C.
 
@@ -558,7 +558,7 @@ tag. A Dependabot bump of the builder digest is therefore first built at release
 It fails closed: the toolchain check in the Dockerfile and the build step run before any push, so no
 bad image is published.
 
-**Remediation / evidence:** 0.1.8 (commit pending) implements S2. `go-ci.yml` gains an `image` job
+**Remediation / evidence:** 0.1.8 (commit `ed7c737`) implements S2. `go-ci.yml` gains an `image` job
 (`docker build --build-arg VERSION=smoke`, then `bash scripts/smoke.sh static-server:ci`), modelled on
 sui-indexer's job; `docker-publish.yml`'s `verify` reuses `go-ci.yml`, so the tag runs it too. The script
 is dependency-free (bash, curl and the engine) and takes about a second after the build. It runs the image
@@ -591,7 +591,7 @@ F2 gate (govulncheck on the toolchain that is shipped), which the first pass cou
 
 ### F12 — The 405 response carried no security headers (found 2026-10-18)
 
-**Severity:** Low   **Disposition:** RESOLVED (0.1.8, commit pending)
+**Severity:** Low   **Disposition:** RESOLVED (0.1.8, commit `ed7c737`)
 **Where:** `main.go:233` (`newHandler`), `methodGuard` (`:461`), `secureHeaders` (`:585`).
 
 **Issue:** the handler chain was `logRequest → methodGuard → secureHeaders → mux`, so `methodGuard` answered
@@ -605,7 +605,7 @@ The new container smoke test found it on its first run.
 rendered as a document by normal flows), but it broke the stated invariant (A4) and a header scanner would
 flag it. It affected every consumer.
 
-**Remediation / evidence:** 0.1.8 (commit pending): `newHandler` is now `logRequest → secureHeaders →
+**Remediation / evidence:** 0.1.8 (commit `ed7c737`): `newHandler` is now `logRequest → secureHeaders →
 methodGuard → mux`. Pinned by `TestSecurityHeadersOnMethodNotAllowed` (POST, PUT, DELETE, PATCH, OPTIONS: all
 five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all six headers).
 
@@ -719,8 +719,8 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 
 ### pre-mainnet
 
-- [x] docs discipline restored — F6 RESOLVED (0.1.8, commit pending; every option in every reference surface, the comment slips fixed, `TestDocsListEveryOption`)
-- [x] regression test pinning "no caching headers on errors" (S1) and a container smoke test (S2, F10) — F10 RESOLVED (0.1.8, commit pending; `TestNoCachingHeadersOnErrors`, `scripts/smoke.sh`, the `image` job in `go-ci.yml`; Podman run 2026-10-18)
+- [x] docs discipline restored — F6 RESOLVED (0.1.8, commit `ed7c737`; every option in every reference surface, the comment slips fixed, `TestDocsListEveryOption`)
+- [x] regression test pinning "no caching headers on errors" (S1) and a container smoke test (S2, F10) — F10 RESOLVED (0.1.8, commit `ed7c737`; `TestNoCachingHeadersOnErrors`, `scripts/smoke.sh`, the `image` job in `go-ci.yml`; Podman run 2026-10-18)
 - [ ] CSP default and nonce handling decided — F4 / OQ2 (maintainer decision; the nonce handling is done in 0.1.8 — `script-src-elem`, `'none'` — and only the default-CSP choice stays open, options and a recommendation in OQ2)
 - [ ] external review — maintainer item (`OPERATOR_TASKS.md` "Funding, grants and an external audit")
 
@@ -895,7 +895,7 @@ per consumer is that consumer's audit; the image's own default page carries none
     the group is 65534 through the `/etc/passwd` entry and consumer pods set `runAsUser: 65534`, so no gap.
   - **OQ1–OQ3** stay open with the evidence now in the questions.
 
-- 2026-10-18 — fix wave on `main` = `v0.1.7` = `e1a71c5` plus local 0.1.8 (commit pending; not tagged or
+- 2026-10-18 — fix wave on `main` = `v0.1.7` = `e1a71c5` plus local 0.1.8 (commit `ed7c737`; not tagged or
   published). Go 1.26.9 is still the latest 1.26 patch, so the toolchain and builder digest are unchanged.
   - **Resolved:** F5 (q-values and `Vary`: `acceptsEncoding`; three tests), F6 (five options in every
     surface, comment slips, `TestDocsListEveryOption`), F10 (`scripts/smoke.sh`, `image` job, `make smoke`),
