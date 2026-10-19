@@ -316,7 +316,7 @@ The raw template is preserved at `/app/default/index.html.tpl` inside the image 
 | Workflow | Trigger | Action |
 | -------- | ------- | ------ |
 | `go-ci.yml` | push, pull_request, and called by the release | golangci-lint, `go vet` + `go test -race`, govulncheck, Trivy filesystem scan, and an image job that builds the image and runs `scripts/smoke.sh` against it |
-| `docker-publish.yml` | tag push `v*` | runs `go-ci.yml`, then multi-platform build + push to quay.io and Docker Hub (scanned, cosign-signed, SBOM and provenance attested) and a best-effort self-hosted registry |
+| `docker-publish.yml` | tag push `v*` | runs `go-ci.yml`, then multi-platform build + push to quay.io and Docker Hub (scanned, cosign-signed, SBOM and provenance attested) and a best-effort copy of the same image (by digest, no rebuild) to the self-hosted registry |
 
 See [`.github/workflows/`](.github/workflows/) for the full workflow YAML. Registry credentials
 and org coordinates are GitHub repository variables/secrets — no YAML edits needed for forks.

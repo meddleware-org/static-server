@@ -692,7 +692,7 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 | --- | --- | --- | --- |
 | Push to quay.io / Docker Hub | `docker-publish.yml` (tag `v*`) | repo secrets (`QUAY_*`, `DOCKERHUB_*`) — inventory is the maintainer item "Image registry credentials" in `OPERATOR_TASKS.md` | `verify` = full Go CI; image scan (F2) |
 | Signing / attestation | same | OIDC keyless (`id-token: write` on the publish job only) | — |
-| Self-hosted registry | same | secrets | `continue-on-error` (best-effort, unsigned); its login fails without credentials (maintainer item, same `OPERATOR_TASKS.md` row) |
+| Self-hosted registry | same | secrets | `continue-on-error` (best-effort `mirror-private`: copies the signed public image by digest, no rebuild); its login fails without credentials (maintainer item, same `OPERATOR_TASKS.md` row) |
 
 #### CI & release integrity
 
@@ -933,7 +933,7 @@ per consumer is that consumer's audit; the image's own default page is served un
   - **Gates:** pre-localnet and pre-testnet ticked with evidence; pre-mainnet keeps F6, the S1/S2 suggestions,
     OQ2 and the external review.
   - **Evidence of run:** `go vet` clean; `go test -race -cover` ok (37 tests, 91.9%); GitHub run 37964221333
-    (all verify jobs, scan, sign, SBOM, provenance success; the best-effort private-registry job fails at login);
+    (all verify jobs, scan, sign, SBOM, provenance success; the best-effort private-registry job (then a rebuild, since replaced by the digest-preserving `mirror-private`) fails at login);
     Docker Hub digest and referrers; `config/images.yaml`; consumer Dockerfiles and pod specs.
   - **Not verified:** govulncheck and golangci-lint locally (only through the Publish run); quay.io manifest
     directly; the advisory texts for GO-2026-6607…6617.
@@ -994,6 +994,7 @@ per consumer is that consumer's audit; the image's own default page is served un
   - **Not re-run here:** the cosign verification (reported by the release orchestrator against `docker-publish.yml@refs/tags/v`; cosign is not installed in this sandbox).
   - **Findings and gates:** no change (F4 RESOLVED, OQ2 decided, pre-mainnet open only for the external review).
   - Dependabot policy encoded in .github/dependabot.yml (majors declined); open PRs merged 2026-10-19
+  - `docker-publish.yml`: the private rebuild jobs are replaced by one `mirror-private` job that copies the published quay.io image (and its cosign artifacts) to the self-hosted registry by digest and fails unless the digest and the signature match (build once, promote by digest; committed locally, not yet released; the `PRIVATE_REGISTRY_*` credentials are still unset).
 - 2026-10-18 — cosign identity in the workspace script: the default identity in `bootstrap/images/verify-digests.sh` is now workflow-anchored (`^https://github\.com/meddleware-org/${name}/\.github/workflows/docker-publish\.yml@refs/tags/v`); all 16 deployed and contingency images verified valid against it (`STRICT=0 bash bootstrap/images/verify-digests.sh`). This audit has no finding for it (F3 is RESOLVED on the published command); the F3 evidence sentence is updated. Unchanged: the cluster `ClusterImagePolicy` (OQ3, platform item).
 
 ## Pre-save consistency checklist (this pass)
