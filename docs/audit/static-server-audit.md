@@ -373,7 +373,7 @@ scan regressions can reach a tag.
 
 ### F4 — CSP was off by default, and the nonce handling had edge cases
 
-**Severity:** Info   **Disposition:** RESOLVED (0.1.9, commit pending: restrictive default CSP in the image, OQ2 option (c); the nonce edge cases fixed in 0.1.8)
+**Severity:** Info   **Disposition:** RESOLVED (0.1.9, commit `e2a9aed`: restrictive default CSP in the image, OQ2 option (c); the nonce edge cases fixed in 0.1.8)
 **Where:** `main.go:115-116` (`CONTENT_SECURITY_POLICY` default `""`; `CSP_NONCE` default `true`),
 `secureHeaders` (`:585`), `withScriptNonce` (`:625`).
 
@@ -400,7 +400,7 @@ injection point, the edge reads the header on HTML responses, and a per-response
 code for no stated risk. The default was then left to OQ2. The 2026-10-09 re-check follows, and the 2026-10-19
 0.1.9 resolution after it.
 
-- **Resolution (2026-10-19, 0.1.9, commit pending).** The maintainer decided OQ2 for option (c). The
+- **Resolution (2026-10-19, 0.1.9, commit `e2a9aed`).** The maintainer decided OQ2 for option (c). The
   Dockerfile now has `ENV CONTENT_SECURITY_POLICY="default-src 'self'; script-src 'self'; style-src 'self';
   img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'"`.
   The Go default (`envOr("CONTENT_SECURITY_POLICY", "")`) is unchanged, so the bare binary sends no CSP and
@@ -753,7 +753,7 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 
 - [x] docs discipline restored — F6 RESOLVED (0.1.8, commit `ed7c737`; every option in every reference surface, the comment slips fixed, `TestDocsListEveryOption`)
 - [x] regression test pinning "no caching headers on errors" (S1) and a container smoke test (S2, F10) — F10 RESOLVED (0.1.8, commit `ed7c737`; `TestNoCachingHeadersOnErrors`, `scripts/smoke.sh`, the `image` job in `go-ci.yml`; Podman run 2026-10-18)
-- [x] CSP default and nonce handling decided — F4 RESOLVED / OQ2 decided (2026-10-19, option (c)): the nonce handling in 0.1.8 (`script-src-elem`, `'none'`) and the restrictive image-only default CSP in 0.1.9 (commit pending; `TestImageDefaultCSP`, `TestDefaultPageFitsDefaultCSP`, `scripts/smoke.sh`)
+- [x] CSP default and nonce handling decided — F4 RESOLVED / OQ2 decided (2026-10-19, option (c)): the nonce handling in 0.1.8 (`script-src-elem`, `'none'`) and the restrictive image-only default CSP in 0.1.9 (commit `e2a9aed`; `TestImageDefaultCSP`, `TestDefaultPageFitsDefaultCSP`, `scripts/smoke.sh`)
 - [ ] external review — maintainer item (`OPERATOR_TASKS.md` "Funding, grants and an external audit")
 
 ---
