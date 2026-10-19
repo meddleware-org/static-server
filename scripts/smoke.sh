@@ -9,6 +9,8 @@
 #   - the baked-in default page is served from /app/default (so the non-root user can read it);
 #   - security headers are present on a 200, a 404 and a 405 response, including HSTS and
 #     Permissions-Policy, and the CSP carries a fresh script nonce when one is configured;
+#   - a container started with NO CONTENT_SECURITY_POLICY serves the image's restrictive default CSP (plus
+#     the nonce), an operator-set value replaces it, and an empty value sends no CSP at all;
 #   - a missing file under CACHE_IMMUTABLE_PREFIX is a 404 with NO Cache-Control header;
 #   - dot-files are not served, and only GET/HEAD are accepted.
 #
@@ -44,7 +46,8 @@ csp="default-src 'self'; script-src 'self'"
 cid="$("$engine" run -d --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
   -e CONTENT_SECURITY_POLICY="$csp" -e CACHE_IMMUTABLE_PREFIX=/assets/ \
   -p 127.0.0.1::8080 "$image")"
-trap '"$engine" logs "$cid" 2>&1 | tail -20; "$engine" rm -f "$cid" > /dev/null 2>&1 || true; rm -rf "$work"' EXIT
+extra_cids=""
+trap '"$engine" logs "$cid" 2>&1 | tail -20; for c in $cid $extra_cids; do "$engine" rm -f "$c" > /dev/null 2>&1 || true; done; rm -rf "$work"' EXIT
 
 hostport="$("$engine" port "$cid" 8080/tcp | head -n 1)"
 base="http://${hostport}"
@@ -113,5 +116,35 @@ fetch POST /
 [ "$code" = 405 ] || fail "POST / answered ${code}, want 405"
 require_header Allow '^GET, HEAD$' POST /
 security_headers POST /
+
+# The stock image, with no CONTENT_SECURITY_POLICY set, must send its restrictive same-origin default
+# (the Dockerfile ENV), with the script nonce added to script-src; an empty value must switch it off.
+default_csp="default-src 'self'; script-src 'self' 'nonce-[A-Za-z0-9+/]{22}=='; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'"
+default_re="^${default_csp}\$"
+stock_cid="$("$engine" run -d --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+  -p 127.0.0.1::8080 "$image")"
+extra_cids="$stock_cid"
+stock_base="http://$("$engine" port "$stock_cid" 8080/tcp | head -n 1)"
+for _ in $(seq 1 30); do
+  "$engine" exec "$stock_cid" /server -healthcheck > /dev/null 2>&1 && break
+  sleep 1
+done
+for path in / /healthz /missing.html; do
+  curl -sS -D "$work/headers" -o /dev/null "${stock_base}${path}"
+  v="$(header Content-Security-Policy)"
+  [[ "$v" =~ $default_re ]] || fail "stock image GET ${path}: Content-Security-Policy is '${v}', want the restrictive default"
+done
+[[ "$v" != *unsafe-inline* ]] || fail "the default CSP allows unsafe-inline"
+
+empty_cid="$("$engine" run -d --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
+  -e CONTENT_SECURITY_POLICY= -p 127.0.0.1::8080 "$image")"
+extra_cids="$extra_cids $empty_cid"
+empty_base="http://$("$engine" port "$empty_cid" 8080/tcp | head -n 1)"
+for _ in $(seq 1 30); do
+  "$engine" exec "$empty_cid" /server -healthcheck > /dev/null 2>&1 && break
+  sleep 1
+done
+curl -sS -D "$work/headers" -o /dev/null "${empty_base}/"
+[ -z "$(header Content-Security-Policy)" ] || fail "CONTENT_SECURITY_POLICY= (empty) still sent a CSP: $(header Content-Security-Policy)"
 
 echo "smoke test passed (${engine}, ${image})"

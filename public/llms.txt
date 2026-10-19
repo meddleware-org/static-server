@@ -29,7 +29,9 @@
                            /404.html (default empty = plain 404; ignored when SPA_FALLBACK is on)
     CACHE_IMMUTABLE_PREFIX=  Path prefix whose files get one-year immutable caching
                              (e.g. /assets/); html/nav get no-cache (default empty = off)
-    CONTENT_SECURITY_POLICY=  Content-Security-Policy header value (default unset)
+    CONTENT_SECURITY_POLICY=  Content-Security-Policy header value (bare binary: unset; this image defaults to
+                           default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self';
+                           set your own policy to override, or empty to send no CSP)
     CSP_NONCE=true         Append a fresh 'nonce-...' to the CSP's script-src and script-src-elem on
                            every response, for edge-injected scripts; a nonce makes browsers ignore
                            'unsafe-inline' in that directive. No effect without a CSP (default true)
@@ -46,7 +48,7 @@
     X-Content-Type-Options:  nosniff                       (always)
     X-Frame-Options:         SAMEORIGIN                    (always)
     Referrer-Policy:         strict-origin-when-cross-origin  (always)
-    Content-Security-Policy: set only when CONTENT_SECURITY_POLICY is configured
+    Content-Security-Policy: CONTENT_SECURITY_POLICY (image default: restrictive same-origin policy)
     Strict-Transport-Security: STRICT_TRANSPORT_SECURITY (on by default)
     Permissions-Policy:      PERMISSIONS_POLICY (on by default)
     Cache-Control:           immutable under CACHE_IMMUTABLE_PREFIX; no-cache for html/nav;

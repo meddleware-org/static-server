@@ -324,8 +324,8 @@ docker build \
         </tr>
         <tr>
           <td><code>CONTENT_SECURITY_POLICY</code></td>
-          <td>(unset)</td>
-          <td>When set, adds the <code>Content-Security-Policy</code> response header with this value.</td>
+          <td>(unset in the bare binary; the image sets <code>default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'</code>)</td>
+          <td>When non-empty, adds the <code>Content-Security-Policy</code> response header with this value. The image default is restrictive and same-origin (no inline script or style, no third-party origin); content that needs more must set its own policy. Set it to your policy to override, or to an empty string to send no CSP. Consumer images that set their own are unaffected.</td>
         </tr>
         <tr>
           <td><code>CSP_NONCE</code></td>
@@ -386,7 +386,7 @@ docker build \
         <tr><td><code>X-Content-Type-Options</code></td><td><code>nosniff</code> (always)</td></tr>
         <tr><td><code>X-Frame-Options</code></td><td><code>SAMEORIGIN</code> (always)</td></tr>
         <tr><td><code>Referrer-Policy</code></td><td><code>strict-origin-when-cross-origin</code> (always)</td></tr>
-        <tr><td><code>Content-Security-Policy</code></td><td>value of <code>CONTENT_SECURITY_POLICY</code> (only when set), with a fresh script nonce when <code>CSP_NONCE</code> is on</td></tr>
+        <tr><td><code>Content-Security-Policy</code></td><td>value of <code>CONTENT_SECURITY_POLICY</code> (the image default unless overridden; none if set empty), with a fresh script nonce when <code>CSP_NONCE</code> is on</td></tr>
         <tr><td><code>Strict-Transport-Security</code></td><td>value of <code>STRICT_TRANSPORT_SECURITY</code> (on by default)</td></tr>
         <tr><td><code>Permissions-Policy</code></td><td>value of <code>PERMISSIONS_POLICY</code> (on by default)</td></tr>
         <tr><td><code>Cache-Control</code></td><td><code>immutable</code> under <code>CACHE_IMMUTABLE_PREFIX</code>; <code>no-cache</code> for html/navigation; never present on error responses</td></tr>

@@ -30,7 +30,9 @@
 //	NOT_FOUND_PAGE          page served with status 404 for unknown navigation routes, e.g.
 //	                        /404.html (default: "" = plain 404; ignored when SPA_FALLBACK is on)
 //	CACHE_IMMUTABLE_PREFIX  path prefix whose files get long immutable caching (default: "" = off)
-//	CONTENT_SECURITY_POLICY value of the Content-Security-Policy header (default: "" = unset)
+//	CONTENT_SECURITY_POLICY value of the Content-Security-Policy header (default: "" = unset in the
+//	                        binary; the container image sets a restrictive same-origin policy, which
+//	                        an operator replaces with their own value, or empties to send no CSP)
 //	CSP_NONCE               add a fresh 'nonce-…' to the CSP's script-src and script-src-elem on every
 //	                        response, so an edge (e.g. Cloudflare JavaScript Detections) can mark the
 //	                        inline scripts it injects; the app's own scripts stay governed by 'self'.

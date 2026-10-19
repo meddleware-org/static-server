@@ -1,6 +1,6 @@
 # Security Audit — `static-server`
 
-**Classification:** Internal security review (re-verified 2026-10-09; fix wave 2026-10-18, released and deployed as 0.1.8 on 2026-10-18 — awaiting external review)
+**Classification:** Internal security review (re-verified 2026-10-09; fix wave 2026-10-18, released and deployed as 0.1.8 on 2026-10-18; F4 resolved locally in 0.1.9 on 2026-10-19, not yet released — awaiting external review)
 **Project:** static-server — a minimal, stdlib-only Go HTTP static file server on a `scratch` image.
 
 - **Serving.** A cascade filesystem (`SERVE_DIR` → `FALLBACK_DIR`), each root opened with `os.OpenRoot`
@@ -64,7 +64,7 @@ separately).
 - Realised ceiling: **Low** at the first pass (F1–F3) and F12 (2026-10-18), all four since RESOLVED; what
   remains open is Info.
 
-**Status:** re-verified 2026-10-09 (first pass 2026-10-03); fix wave 2026-10-18 (F5, F6, F10, F12 RESOLVED in 0.1.8; released and deployed 2026-10-18, signature verified, rollout succeeded). The CHANGELOG records an earlier internal
+**Status:** re-verified 2026-10-09 (first pass 2026-10-03); fix wave 2026-10-18 (F5, F6, F10, F12 RESOLVED in 0.1.8; released and deployed 2026-10-18, signature verified, rollout succeeded); OQ2 decided and F4 RESOLVED in 0.1.9 (local commit, 2026-10-19; not tagged, pushed or published). The CHANGELOG records an earlier internal
 review ("audited", 2026-09-21) with no audit document in the repo; the 2026-10-03 pass was the first
 corpus-format audit.
 
@@ -102,12 +102,13 @@ corpus-format audit.
 
 ## Executive summary
 
-`main.go` (709 lines) holds all the logic. There are 44 tests (`main_test.go`, 1225 lines) over real
+`main.go` (711 lines) holds all the logic. There are 47 tests (`main_test.go`, 1334 lines) over real
 HTTP (`httptest`). Since the 2026-10-03 pass the three Low findings were fixed and released (0.1.6 and
 0.1.7), the Go toolchain advisory found on 2026-10-09 was fixed (0.1.7), and the remaining Info items
 were re-checked and given reasoned dispositions. The 2026-10-18 fix wave (0.1.8, commit `ed7c737`) closed
 F5, F6 and F10, found and fixed F12 (the 405 response lacked the security headers), and fixed the
-nonce and `Cache-Control` edge cases of F4 and F7.
+nonce and `Cache-Control` edge cases of F4 and F7. A second pass on 2026-10-19 (0.1.9, local) took the
+maintainer's decision on OQ2, option (c): the image bakes in a restrictive same-origin default CSP (F4 RESOLVED).
 
 **What holds (verified):**
 
@@ -149,16 +150,17 @@ nonce and `Cache-Control` edge cases of F4 and F7.
 - **CI.** golangci-lint (pinned v2.13.0), `go vet`, race tests with coverage, govulncheck (pinned
   v1.8.0), a Trivy filesystem scan (vulns, misconfig, secrets), SHA-pinned actions, and Dependabot
   (weekly, grouped: docker and github-actions).
-- **Measured (2026-10-18).** `go vet` clean; **44 tests pass with `-race`**; **coverage 93.0%**
+- **Measured (2026-10-19).** `go vet` clean; **47 tests pass with `-race`**; **coverage 93.0%**
   (Go 1.26.9, the `go.mod` toolchain); golangci-lint v2.13.0 0 issues; govulncheck v1.8.0 no
   vulnerabilities; `scripts/smoke.sh` passed against a rootless-Podman build of the image.
 
-**Findings and dispositions (F1–F12):** 8 RESOLVED (F1, F2, F3, F5, F6, F10, F11, F12), 2 ACCEPTED-RISK
-(F4, F7), 1 ADJUDICATED (F9), 1 Positive (F8). None above Info is unresolved.
+**Findings and dispositions (F1–F12):** 9 RESOLVED (F1, F2, F3, F4, F5, F6, F10, F11, F12), 1 ACCEPTED-RISK
+(F7), 1 ADJUDICATED (F9), 1 Positive (F8). None above Info is unresolved.
 
-- **F4 — CSP is off by default** (the nonce edge cases are fixed in 0.1.8). Info; every one of the eleven
-  consumers sets a CSP. Whether the image should ship a strict default is OQ2 (options and a
-  recommendation recorded there).
+- **F4 — CSP was off by default.** Info; RESOLVED in 0.1.9 (the nonce edge cases in 0.1.8). The maintainer
+  decided OQ2 for option (c): the image bakes a restrictive same-origin default CSP into a Dockerfile `ENV`;
+  the Go default stays empty and all eleven consumers set their own, so none is affected. The cost lands on
+  out-of-tree operators whose mounted content needs inline scripts, inline styles or CDN assets (see OQ2).
 - **F5 — precompressed negotiation ignored `q=0`.** RESOLVED in 0.1.8 (q-values parsed, `Vary` on every
   asset response).
 - **F6 — docs-discipline drift.** RESOLVED in 0.1.8 (every option in every reference surface; a test keeps
@@ -173,7 +175,7 @@ nonce and `Cache-Control` edge cases of F4 and F7.
 - A small, careful server with strong CI and release attestations; the path-confinement, release-gate
   and verification-guidance gaps found on 2026-10-03 are closed in code and released.
 - The rare cache-header trap is closed by the Go stdlib and, since 0.1.8, pinned by a test (S1).
-- What remains is the default-CSP decision (OQ2, Info) and the external review (pre-mainnet).
+- What remains is the external review (pre-mainnet). The default-CSP decision is taken (OQ2, 0.1.9; the cost for out-of-tree operators is stated there).
 
 ---
 
@@ -233,7 +235,7 @@ configuration.
 | `go vet ./...` (2026-10-09, local Go 1.27.1) | clean |
 | `go test -race -cover ./...` (2026-10-09) | **ok** (37 tests), **coverage 91.9%** |
 | 2026-10-03 scratch probe (deleted afterwards; code since changed) | missing `/assets/*.js` → 404 with **no** `Cache-Control` (stdlib strips it); `/assets/` and `/assets/sub` → SPA index, `no-cache`; `/.env`, `/.git/config` → 200 and symlink `/link.txt` → `/etc/hostname` served (**both closed in 0.1.6, F1**); `Accept-Encoding: br;q=0, gzip` → `br` and identity variant without `Vary` (F5, unchanged in the code); CSP with `script-src-elem` → nonce added to `script-src` only (F4, unchanged) |
-| `go vet ./...`, `go test -race -cover ./...`, gofmt (2026-10-18, Go 1.26.9) | clean; **ok** (44 tests), **coverage 93.0%** |
+| `go vet ./...`, `go test -race -cover ./...`, gofmt (2026-10-19, Go 1.26.9) | clean; **ok** (47 tests), **coverage 93.0%** (0.1.9 tree) |
 | govulncheck / golangci-lint | 2026-10-18: govulncheck v1.8.0 (Go 1.26.9) no vulnerabilities; golangci-lint v2.13.0 (the CI pin) 0 issues. 2026-10-09: not run locally; both ran green in the Publish run for `v0.1.7` (run 37964221333) |
 | `scripts/smoke.sh` (2026-10-18, rootless Podman 4.9.3, `podman build --build-arg VERSION=smoke`) | passed; the image runs as `65534`, `--read-only --cap-drop ALL`; the in-image `-healthcheck` works; no Docker daemon was used (root-only socket) |
 | GitHub Actions history (public API) | `Publish (Docker)` for `v0.1.7` success; Go CI on `main` failed at 2026-10-09 16:51Z and passed at 17:09Z on `e1a71c5` (consistent with the 1.26.7 advisories recorded in the 0.1.7 CHANGELOG entry); the Publish run's self-hosted job fails at registry login (best-effort job, maintainer item) |
@@ -369,9 +371,9 @@ scan regressions can reach a tag.
   any org repository, not this one) and is in `warn` mode. That is a platform item (not this repository);
   see the PLATFORM audit.
 
-### F4 — CSP is off by default, and the nonce handling has edge cases
+### F4 — CSP was off by default, and the nonce handling had edge cases
 
-**Severity:** Info   **Disposition:** ACCEPTED-RISK (default pending OQ2; the nonce edge cases fixed in 0.1.8)
+**Severity:** Info   **Disposition:** RESOLVED (0.1.9, commit pending: restrictive default CSP in the image, OQ2 option (c); the nonce edge cases fixed in 0.1.8)
 **Where:** `main.go:115-116` (`CONTENT_SECURITY_POLICY` default `""`; `CSP_NONCE` default `true`),
 `secureHeaders` (`:585`), `withScriptNonce` (`:625`).
 
@@ -395,7 +397,31 @@ left alone). Pinned by `TestWithScriptNonce` (script-src-elem, repeated directiv
 `'unsafe-inline'` interaction is documented in the package comment, README, `.env.example`, `llms.txt`,
 `public/llms.txt` and `public/index.html`. A `text/html`-only nonce was not done: the server has no HTML
 injection point, the edge reads the header on HTML responses, and a per-response writer wrapper would add
-code for no stated risk. What stays open is the default (OQ2). The 2026-10-09 re-check follows.
+code for no stated risk. The default was then left to OQ2. The 2026-10-09 re-check follows, and the 2026-10-19
+0.1.9 resolution after it.
+
+- **Resolution (2026-10-19, 0.1.9, commit pending).** The maintainer decided OQ2 for option (c). The
+  Dockerfile now has `ENV CONTENT_SECURITY_POLICY="default-src 'self'; script-src 'self'; style-src 'self';
+  img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'"`.
+  The Go default (`envOr("CONTENT_SECURITY_POLICY", "")`) is unchanged, so the bare binary sends no CSP and
+  the eleven consumer images (each sets `ENV CONTENT_SECURITY_POLICY="${CSP}"` from a non-empty `ARG CSP`
+  default; grep of `repos/*/Dockerfile` 2026-10-19) replace the default and are unaffected. `frame-ancestors
+  'self'` is the audit's option (c) text and matches `X-Frame-Options: SAMEORIGIN` (`'none'` would contradict
+  it). `form-action 'self'` is added to the option (c) text. The nonce is appended to `script-src` as before.
+  An operator overrides the default with their own `CONTENT_SECURITY_POLICY`, or sends no CSP by setting it to
+  the empty string (`envOr` treats empty as unset, so no code or new knob was needed). The built-in default
+  page needs nothing the policy blocks: its only inline script is the JSON-LD data block (not executed),
+  `script.js` and `style.css` are same-origin files with no third-party URL, and there is no inline style or
+  handler. Pinned by `TestImageDefaultCSP` (restrictive directives, no `unsafe-*`, no external origin, the
+  policy stated verbatim on every doc surface and in the CHANGELOG, nonce handling), `TestBinaryCSPDefaultIsUnset`,
+  `TestDefaultPageFitsDefaultCSP` and `scripts/smoke.sh` (the stock image sends the exact default with a
+  fresh nonce on 200, 404 and `/healthz`; an operator value replaces it; an empty value sends no CSP). The page
+  was also loaded in headless Chrome against the built image: `script.js` ran (the canonical link was added)
+  with no CSP violation logged.
+- **Residual cost.** Out-of-tree operators who mount content with inline scripts, inline styles or CDN assets
+  on the stock image get that content blocked after upgrading to 0.1.9; they set `CONTENT_SECURITY_POLICY`
+  (their own policy, or empty). Nothing in this repository can know how many there are. The bare binary still
+  has no default, by decision.
 
 
 - **Why accepted.** Every consumer image sets `CONTENT_SECURITY_POLICY` in its Dockerfile (all eleven,
@@ -403,10 +429,9 @@ code for no stated risk. What stays open is the default (OQ2). The 2026-10-09 re
   or `'self'` plus two `sha256-` hashes (VitePress, checked at build time). None uses `script-src-elem`
   or `'unsafe-inline'`, so the nonce edge cases cannot bite today. The nonce is a random header value
   that lets only markup carrying it run, and the server has no HTML injection point.
-- **Open choice.** Whether the image itself should ship a strict default CSP (consumers override) is
-  OQ2, a maintainer decision with options and a recommendation recorded there. A default CSP was not
-  implemented: more than one defensible default exists and it would change what every unknown operator's
-  mounted content may load.
+- **Open choice (closed 2026-10-19).** Whether the image should ship a strict default CSP was OQ2, left
+  open on 2026-10-09 because it changes what every unknown operator's mounted content may load. The
+  maintainer decided it on 2026-10-19 (option (c)); see the resolution above.
 - **If a consumer changes.** The `script-src-elem` handling and the `'unsafe-inline'` note are now in
   place (0.1.8); a `text/html`-only nonce remains optional.
 
@@ -625,7 +650,7 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 | A1 | Cascade filesystem; never flattened (CLAUDE.md) | `cascadeFS` (`main.go:481`) | cascade tests | HOLDS |
 | A2 | Directory listing disabled; `safeDir` outermost (CLAUDE.md) | `safeDir` (`:552`), `fileHandler` (`:258`) | listing tests | HOLDS |
 | A3 | Served paths confined to the serve root (GO-M3; CLAUDE.md invariant 2) | `rootedFS` / `os.OpenRoot` (`:507`), `noDotfiles` (`:531`) | `TestSymlinkEscapeRefused`, `TestDotfilesHidden`, `TestRootedFSMissingDirServesNothing`, traversal and encoded-traversal tests | HOLDS (F1 RESOLVED) |
-| A4 | Security headers on every route; never bypassed (CLAUDE.md) | `secureHeaders` outside `methodGuard` and the mux (`:585`, `newHandler` `:233`) | header tests, `TestSecurityHeadersOnMethodNotAllowed`, the smoke test | HOLDS (F12 RESOLVED; CSP default off — F4, ACCEPTED-RISK) |
+| A4 | Security headers on every route; never bypassed (CLAUDE.md) | `secureHeaders` outside `methodGuard` and the mux (`:585`, `newHandler` `:233`) | header tests, `TestSecurityHeadersOnMethodNotAllowed`, the smoke test | HOLDS (F12 RESOLVED; the image ships a restrictive default CSP since 0.1.9 — F4, RESOLVED) |
 | A5 | GET/HEAD only | `methodGuard` (`:461`) | method tests | HOLDS |
 | A6 | Immutable caching never applied to errors or navigations | `setCacheControl` + stdlib `serveError` + `no-cache` overrides + `serveIndex` | `TestNoCachingHeadersOnErrors`, `TestSPAWithoutIndexIsPlain404`, the smoke test (fails under `GODEBUG=httpservecontentkeepheaders=1`) | HOLDS (S1 done; stdlib-dependent, pinned) |
 | A7 | Server timeouts; graceful shutdown (GO-M1, GO-M8) | `http.Server` (`:177`); signal handler | inspection | HOLDS (30-second write cap — F7) |
@@ -690,13 +715,13 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 
 ## Section C — Test-coverage & hermetic/live split
 
-### C.1 Coverage grade — A (44 tests, `-race`, 93.0%; 2026-10-18)
+### C.1 Coverage grade — A (47 tests, `-race`, 93.0%; 2026-10-19)
 
 | Dimension | Assessment |
 | --- | --- |
 | Happy path | Cascade, SPA, clean URLs, 404 page, immutable prefix, precompressed, headers, nonce, healthz, version |
 | Error path | 405; missing files; listing refusal; traversal (plain and encoded); symlink escape; dot-files; unopenable root |
-| Boundary | `q=0` and `Vary` (F5), a 404 under the immutable prefix (S1), `script-src-elem` and `'none'` (F4), the 405 headers (F12), the SPA 404 without `index.html` (F7): all covered in 0.1.8. **Missing:** none known |
+| Boundary | `q=0` and `Vary` (F5), a 404 under the immutable prefix (S1), `script-src-elem` and `'none'` (F4), the 405 headers (F12), the SPA 404 without `index.html` (F7): all covered in 0.1.8; the image's default CSP, its binary opt-out and the default page under it (F4): covered in 0.1.9 (`TestImageDefaultCSP`, `TestBinaryCSPDefaultIsUnset`, `TestDefaultPageFitsDefaultCSP`, `scripts/smoke.sh`). **Missing:** none known |
 | Security-relevant | Strong for path syntax, path confinement and headers |
 
 ### C.2 Hermetic vs. live paths
@@ -728,7 +753,7 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 
 - [x] docs discipline restored — F6 RESOLVED (0.1.8, commit `ed7c737`; every option in every reference surface, the comment slips fixed, `TestDocsListEveryOption`)
 - [x] regression test pinning "no caching headers on errors" (S1) and a container smoke test (S2, F10) — F10 RESOLVED (0.1.8, commit `ed7c737`; `TestNoCachingHeadersOnErrors`, `scripts/smoke.sh`, the `image` job in `go-ci.yml`; Podman run 2026-10-18)
-- [ ] CSP default and nonce handling decided — F4 / OQ2 (maintainer decision; the nonce handling is done in 0.1.8 — `script-src-elem`, `'none'` — and only the default-CSP choice stays open, options and a recommendation in OQ2)
+- [x] CSP default and nonce handling decided — F4 RESOLVED / OQ2 decided (2026-10-19, option (c)): the nonce handling in 0.1.8 (`script-src-elem`, `'none'`) and the restrictive image-only default CSP in 0.1.9 (commit pending; `TestImageDefaultCSP`, `TestDefaultPageFitsDefaultCSP`, `scripts/smoke.sh`)
 - [ ] external review — maintainer item (`OPERATOR_TASKS.md` "Funding, grants and an external audit")
 
 ---
@@ -737,7 +762,7 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 
 - **One runtime, every front end.** Header and cache semantics here are the VUE-M8 baseline for all
   apps. F1 was fixed once for every host (all eleven consumers moved to `0.1.7`, and to `0.1.8` on 2026-10-18); F4 stays a
-  configuration choice that every consumer makes (CSP in each Dockerfile).
+  configuration choice that every consumer makes (CSP in each Dockerfile), now over a restrictive image default (0.1.9) that each of them replaces.
 - **Supply chain & release integrity.** No modules, so no lockfile to carry; builder pinned by digest and
   checked against the `go.mod` toolchain; actions pinned by SHA; the release runs full CI and an image scan
   before signing; Dependabot (docker, github-actions) is committed. CVE status: govulncheck green on 1.26.9
@@ -753,9 +778,8 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
   accounting; it only serves bytes and headers.
 - **Chain-access layering and on-chain ID/ABI coupling.** N/A (no package or object IDs; it never calls a
   chain endpoint).
-- **Deployment readiness.** Section D is current; the unticked items are the default-CSP decision (OQ2)
-  and the external review.
-- **Pre-v0.2 policy:** F4, F5 and F6 may change defaults without shims. 0.1.8 was released on 2026-10-18 and
+- **Deployment readiness.** Section D is current; the one unticked item is the external review.
+- **Pre-v0.2 policy:** F4, F5 and F6 may change defaults without shims (F4's new image default is such a change, with the override documented). 0.1.8 was released on 2026-10-18 and
   the consumers moved to the new base together (all eleven are on 0.1.8). The 0.1.8 changes are
   additive or tightening for them: the 405 gains the headers, the nonce also goes in `script-src-elem` (none
   uses it), and `PRECOMPRESSED` negotiation is stricter (none enables it).
@@ -805,8 +829,8 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 
 **VUE hosting rows (the runtime's side of B.VUE-1 / VUE-M8):** `X-Content-Type-Options: nosniff`,
 `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy` always; HSTS and `Permissions-Policy` by default (an
-empty variable omits them); CSP only when configured, with `script-src` nonce handling. The effective CSP
-per consumer is that consumer's audit; the image's own default page carries none (F4).
+empty variable omits them); CSP by default in the image (restrictive same-origin, since 0.1.9; none in the bare binary unless configured), with `script-src` nonce handling. The effective CSP
+per consumer is that consumer's audit; the image's own default page is served under the image default (F4).
 
 ## Implementation suggestions (SHOULD / MAY)
 
@@ -829,7 +853,13 @@ per consumer is that consumer's audit; the image's own default page carries none
    `/app/public`: the only `mountPath` in the ten consumer manifests is the status deployment's
    `/etc/platform-probe`. The question stays open for the maintainer to confirm no out-of-tree deployment does.)
 2. **OQ2** F4: should the image ship a strict default CSP, which consumers override, rather
-   than none? (2026-10-18, left open: more than one defensible default exists. Evidence: all eleven consumer
+   than none? **DECIDED 2026-10-19 by the maintainer: option (c), implemented in 0.1.9** (reason: it protects every
+   stock-image deployment, including the image's own page, with no binary change, no shims, the eleven consumers
+   untouched because each sets its own CSP, and a break-glass in the operator's hands: set
+   `CONTENT_SECURITY_POLICY` to their policy or to an empty string. Residual cost, accepted: out-of-tree
+   operators whose mounted content uses inline scripts, inline styles or CDN assets have it blocked until they
+   set their own policy; the bare binary still has no default.) The options as recorded 2026-10-18 before the
+   decision: (2026-10-18, left open: more than one defensible default exists. Evidence: all eleven consumer
    Dockerfiles set `CONTENT_SECURITY_POLICY` themselves, so none would notice a new default; the unknown
    cost is out-of-tree operators mounting content with inline scripts, inline styles or CDN assets, which
    a default would block. Options: (a) status quo, no CSP unless set; (b) a binary default when the variable
@@ -929,6 +959,24 @@ per consumer is that consumer's audit; the image's own default page carries none
     loaded in headless Chromium with no console errors or CSP violations (release facts).
   - **CI `image` job:** the "not verified" item of the fix-wave entry is closed: the `image` (build and smoke test) job passed in the `v0.1.8` Publish run 39115965481 (self-hosted-registry mirror job failed at login as before, best-effort).
   - **Open items unchanged:** OQ2 (default CSP) and the external review.
+
+- 2026-10-19 — OQ2 decided by the maintainer (option (c)) and implemented as 0.1.9 (local commit; not tagged, pushed or published).
+  - **Resolved:** F4 (RESOLVED, was ACCEPTED-RISK): the Dockerfile sets the restrictive same-origin default
+    `CONTENT_SECURITY_POLICY`; the Go default is unchanged; all eleven consumer Dockerfiles were grepped and each sets
+    `ENV CONTENT_SECURITY_POLICY="${CSP}"` from a non-empty `ARG CSP` default, so none inherits the new default.
+    Section D "CSP default and nonce handling decided" ticked; OQ2 marked decided with the residual cost for
+    out-of-tree operators.
+  - **Tests:** `TestImageDefaultCSP`, `TestBinaryCSPDefaultIsUnset`, `TestDefaultPageFitsDefaultCSP` (47 tests now);
+    `scripts/smoke.sh` asserts the exact default plus a fresh nonce on a stock-image 200, 404 and `/healthz`, and that
+    an empty value sends no CSP. `TestDocsListEveryOption` still passes.
+  - **Docs:** README, AGENTS.md, llms.txt, `public/llms.txt`, `public/index.html`, `.env.example` (the variable is
+    commented out there so an `--env-file` does not empty it), the package comment in `main.go`, CHANGELOG 0.1.9.
+  - **Evidence of run:** gofmt and `go vet` clean; `go test -race -cover` ok (47 tests, 93.0%); golangci-lint v2.13.0
+    0 issues; govulncheck v1.8.0 none (both built with and run under the `go.mod` toolchain 1.26.9); the image built
+    with rootless Podman and `scripts/smoke.sh` passed; the default page loaded in headless Chrome against that
+    image with `script.js` running and no CSP violation logged. Docker is unavailable here.
+  - **Orchestrator next:** tag and release 0.1.9; each of the eleven consumers keeps its own CSP, so a rebase
+    onto 0.1.9 changes nothing for them (a consumer that ever drops its `ENV` would inherit the new default).
 - 2026-10-18 — cosign identity in the workspace script: the default identity in `bootstrap/images/verify-digests.sh` is now workflow-anchored (`^https://github\.com/meddleware-org/${name}/\.github/workflows/docker-publish\.yml@refs/tags/v`); all 16 deployed and contingency images verified valid against it (`STRICT=0 bash bootstrap/images/verify-digests.sh`). This audit has no finding for it (F3 is RESOLVED on the published command); the F3 evidence sentence is updated. Unchanged: the cluster `ClusterImagePolicy` (OQ3, platform item).
 
 ## Pre-save consistency checklist (this pass)
@@ -939,6 +987,6 @@ per consumer is that consumer's audit; the image's own default page carries none
 - [x] Closing four-part structure present.
 - [x] Open questions stay open.
 - [x] Section D ↔ dispositions.
-- [x] Executive summary ↔ dispositions (8 RESOLVED, 2 ACCEPTED-RISK, 1 ADJUDICATED, 1 Positive) and ceiling (High; realised Low at the first pass, Info now; F12 was Low and is RESOLVED).
-- [x] C.1 counts measured 2026-10-18 (44 tests, 93.0%).
+- [x] Executive summary ↔ dispositions (9 RESOLVED, 1 ACCEPTED-RISK, 1 ADJUDICATED, 1 Positive) and ceiling (High; realised Low at the first pass, Info now; F12 was Low and is RESOLVED).
+- [x] C.1 counts measured 2026-10-19 (47 tests, 93.0%).
 - [x] Re-verification log entry added.

@@ -6,7 +6,7 @@ A minimal scratch container image (~5 MB) that serves static files via a fully s
 - **Non-root** — runs as UID 65534 (`nobody`)
 - **No external dependencies** — pure Go standard library; `CGO_ENABLED=0`
 - **Kubernetes-native** — `GET /healthz` probe, graceful SIGTERM shutdown, ConfigMap-mountable content
-- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` on every response; HSTS and `Permissions-Policy` by default; CSP when configured
+- **Security headers** — `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` on every response; HSTS and `Permissions-Policy` by default; a restrictive same-origin CSP by default in the image (any CSP when configured)
 - **0BSD licence** — do whatever you want
 
 ## Quick start
@@ -41,7 +41,7 @@ docker.io/meddleware/static-server:v0.1.0
 | `CLEAN_URLS` | `false` | Serve `/<path>` from `/<path>.html` when `/<path>` itself does not exist (static-site generators with extensionless links, e.g. VitePress `cleanUrls`) |
 | `NOT_FOUND_PAGE` | (empty) | Page served with status `404` for unknown navigation routes, e.g. `/404.html`; empty = plain 404. Ignored when `SPA_FALLBACK` is on; assets still get a plain 404 |
 | `CACHE_IMMUTABLE_PREFIX` | (empty) | Path prefix whose files get one-year immutable `Cache-Control` (fingerprinted assets, e.g. `/assets/`); html/nav get `no-cache` |
-| `CONTENT_SECURITY_POLICY` | (unset) | Sets the `Content-Security-Policy` header when provided |
+| `CONTENT_SECURITY_POLICY` | (unset in the bare binary); the **image** sets `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'` | Sets the `Content-Security-Policy` header when non-empty. The image's default is restrictive and same-origin (no inline script or style, no third-party origin, no plugins, no `<base>`); content that needs more (inline scripts or styles, CDN assets) must set its own policy. Override it by setting this variable to your policy; set it to an empty string to send no CSP. Consumer images set their own and are unaffected |
 | `CSP_NONCE` | `true` | Appends a fresh `'nonce-…'` to the policy's `script-src` and `script-src-elem` on every response. The server inlines no scripts; the nonce lets an edge that injects scripts and reads the nonce from this header (Cloudflare JavaScript Detections / Bot Fight Mode) run them without `'unsafe-inline'`. A policy with neither directive is left unchanged, as is a directive that is `'none'`. **A nonce makes browsers ignore `'unsafe-inline'` in the directive it joins**: if your own pages rely on inline scripts, allow them by hash or set `CSP_NONCE=false`. |
 | `STRICT_TRANSPORT_SECURITY` | `max-age=31536000; includeSubDomains` | `Strict-Transport-Security` value; set to empty to omit the header |
 | `PERMISSIONS_POLICY` | `camera=(), geolocation=(), microphone=(), payment=()` | `Permissions-Policy` value; set to empty to omit the header |

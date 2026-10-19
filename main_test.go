@@ -1223,3 +1223,112 @@ func TestDocsListEveryOption(t *testing.T) {
 		}
 	}
 }
+
+// imageDefaultCSP reads the CONTENT_SECURITY_POLICY the Dockerfile bakes into the image.
+func imageDefaultCSP(t *testing.T) string {
+	t.Helper()
+	df, err := os.ReadFile("Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^ENV CONTENT_SECURITY_POLICY="([^"]+)"$`).FindStringSubmatch(string(df))
+	if m == nil {
+		t.Fatal(`Dockerfile has no ENV CONTENT_SECURITY_POLICY="..." line`)
+	}
+	return m[1]
+}
+
+// TestBinaryCSPDefaultIsUnset pins that the default CSP lives in the image only: the Go code default
+// stays empty, so running the binary directly sends no CSP, and an empty value switches the image
+// default off.
+func TestBinaryCSPDefaultIsUnset(t *testing.T) {
+	_ = os.Unsetenv("CONTENT_SECURITY_POLICY")
+	if got := loadConfig().CSP; got != "" {
+		t.Fatalf("binary CSP default is %q, want empty (the default belongs to the Dockerfile)", got)
+	}
+	t.Setenv("CONTENT_SECURITY_POLICY", "")
+	if got := loadConfig().CSP; got != "" {
+		t.Fatalf("an empty CONTENT_SECURITY_POLICY gave %q, want empty (the documented opt-out)", got)
+	}
+}
+
+// TestImageDefaultCSP pins the image's default policy: it is restrictive (no inline, no third-party
+// origin), it is documented verbatim on every reference surface, and it keeps working with the
+// per-response script nonce.
+func TestImageDefaultCSP(t *testing.T) {
+	csp := imageDefaultCSP(t)
+	for _, want := range []string{
+		"default-src 'self'", "script-src 'self'", "style-src 'self'", "object-src 'none'",
+		"base-uri 'none'", "frame-ancestors 'self'", "form-action 'self'",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("default CSP lacks %q: %s", want, csp)
+		}
+	}
+	for _, bad := range []string{"unsafe-inline", "unsafe-eval", "http:", "https:", "*"} {
+		if strings.Contains(csp, bad) {
+			t.Errorf("default CSP contains %q: %s", bad, csp)
+		}
+	}
+	for _, surface := range append([]string{"CHANGELOG.md"}, docSurfaces...) {
+		body, err := os.ReadFile(surface)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), csp) {
+			t.Errorf("%s does not state the image default CSP verbatim", surface)
+		}
+	}
+	got := withScriptNonce(csp, "N")
+	if !strings.Contains(got, "script-src 'self' 'nonce-N';") || strings.Count(got, "nonce-N") != 1 {
+		t.Errorf("nonce handling of the default CSP: %s", got)
+	}
+}
+
+// TestDefaultPageFitsDefaultCSP pins that the image's built-in page loads under the default policy:
+// no inline script (the JSON-LD block is data, not executed), no inline style or style attribute, no
+// event-handler attribute, and no third-party URL in the script, the stylesheet or any resource
+// reference.
+func TestDefaultPageFitsDefaultCSP(t *testing.T) {
+	htmlBytes, err := os.ReadFile("public/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(htmlBytes)
+	for _, m := range regexp.MustCompile(`(?s)<script\b([^>]*)>(.*?)</script>`).FindAllStringSubmatch(page, -1) {
+		attrs := m[1]
+		if strings.Contains(attrs, `type="application/ld+json"`) {
+			continue
+		}
+		if !regexp.MustCompile(`\bsrc="/[^"/]`).MatchString(attrs) || strings.TrimSpace(m[2]) != "" {
+			t.Errorf("default page has an inline or non-same-origin script: <script%s>", attrs)
+		}
+	}
+	for _, re := range []string{`(?i)<style\b`, `(?i)\sstyle\s*=`, `(?i)\son[a-z]+\s*=`, `(?i)javascript:`} {
+		if regexp.MustCompile(re).MatchString(page) {
+			t.Errorf("default page matches %s, which the default CSP blocks", re)
+		}
+	}
+	// Resource-loading references must be same-origin (links in the body are navigation, not loads).
+	for _, m := range regexp.MustCompile(`(?i)<(?:link|img|script|iframe|source|video|audio|embed|object)\b[^>]*\b(?:src|href|data)="([^"]*)"`).FindAllStringSubmatch(page, -1) {
+		if !strings.HasPrefix(m[1], "/") || strings.HasPrefix(m[1], "//") {
+			t.Errorf("default page loads %q, which is not same-origin", m[1])
+		}
+	}
+	css, err := os.ReadFile("public/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if regexp.MustCompile(`(?i)@import|url\(\s*["']?(?:https?:)?//`).Match(css) {
+		t.Error("public/style.css loads a third-party resource")
+	}
+	js, err := os.ReadFile("public/script.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"eval(", "new Function", "innerHTML", "document.write", "fetch(", "XMLHttpRequest"} {
+		if strings.Contains(string(js), bad) {
+			t.Errorf("public/script.js uses %s, which the default CSP or its purpose rules out", bad)
+		}
+	}
+}

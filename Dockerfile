@@ -105,6 +105,15 @@ ENV PORT=8080
 ENV SERVE_DIR=/app/public
 ENV FALLBACK_DIR=/app/default
 
+# Restrictive same-origin default Content-Security-Policy, baked into the IMAGE only: the binary's own
+# default stays "" (unset), so running it directly is unchanged, and a consumer image that sets its own
+# CONTENT_SECURITY_POLICY simply replaces this value. The policy suits static content: nothing inline, no
+# third-party origin, no plugins, no <base>, framing and form posts same-origin only; frame-ancestors
+# 'self' matches X-Frame-Options: SAMEORIGIN. The per-response script nonce (CSP_NONCE) is appended to
+# script-src. An operator whose mounted content needs more sets CONTENT_SECURITY_POLICY to their own
+# policy, or to the empty string to send no CSP.
+ENV CONTENT_SECURITY_POLICY="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'"
+
 # Healthcheck for non-Kubernetes runtimes (Docker, Compose).
 # The binary handles -healthcheck by dialling localhost/healthz and exiting 0/1.
 # Kubernetes uses its own readiness/liveness probes and ignores this instruction.

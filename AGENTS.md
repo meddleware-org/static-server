@@ -131,7 +131,7 @@ make build-multi VERSION=v0.1.0 \
 | `CLEAN_URLS` | `false` | Serve `/<path>` from `/<path>.html` when `/<path>` does not exist |
 | `NOT_FOUND_PAGE` | (empty) | Page served with status 404 for unknown navigation routes; ignored when `SPA_FALLBACK` is on |
 | `CACHE_IMMUTABLE_PREFIX` | (empty) | Path prefix whose files get one-year immutable caching |
-| `CONTENT_SECURITY_POLICY` | (unset) | `Content-Security-Policy` header value |
+| `CONTENT_SECURITY_POLICY` | (unset in the bare binary; the image sets `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'`) | `Content-Security-Policy` header value. The image-level default is a Dockerfile `ENV` only; the Go code default stays empty. Override with your own policy, or set empty to send no CSP |
 | `CSP_NONCE` | `true` | Fresh script nonce in the CSP's `script-src` / `script-src-elem` on every response |
 | `STRICT_TRANSPORT_SECURITY` | `max-age=31536000; includeSubDomains` | HSTS value; empty omits the header |
 | `PERMISSIONS_POLICY` | `camera=(), geolocation=(), microphone=(), payment=()` | `Permissions-Policy` value; empty omits the header |

@@ -46,7 +46,9 @@ Environment variables (all optional; defaults shown):
                             ignored when SPA_FALLBACK is on
     CACHE_IMMUTABLE_PREFIX= Path prefix whose files get one-year immutable caching
                             (fingerprinted assets, e.g. /assets/); html/nav get no-cache
-    CONTENT_SECURITY_POLICY=  Value of the Content-Security-Policy header (unset by default)
+    CONTENT_SECURITY_POLICY=  Value of the Content-Security-Policy header (unset in the bare binary; the image
+                              sets: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self';
+                              override with your own policy, or empty to send no CSP)
     CSP_NONCE=true            Append a fresh 'nonce-…' to the CSP's script-src and script-src-elem on every
                               response (a nonce makes browsers ignore 'unsafe-inline' there)
     STRICT_TRANSPORT_SECURITY=  Strict-Transport-Security value (default max-age=31536000; includeSubDomains; empty omits)
@@ -86,7 +88,7 @@ file lands at /app/default/index.html; the raw template is preserved at
     X-Content-Type-Options:  nosniff            (always)
     X-Frame-Options:         SAMEORIGIN         (always)
     Referrer-Policy:         strict-origin-when-cross-origin  (always)
-    Content-Security-Policy: <CONTENT_SECURITY_POLICY>   (only when configured)
+    Content-Security-Policy: <CONTENT_SECURITY_POLICY>   (image default: restrictive same-origin policy; binary: only when configured)
     Strict-Transport-Security: <STRICT_TRANSPORT_SECURITY>   (default on)
     Permissions-Policy: <PERMISSIONS_POLICY>   (default on)
     Cache-Control:           immutable for CACHE_IMMUTABLE_PREFIX; no-cache for html/nav; absent on errors

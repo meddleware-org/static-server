@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.9] - 2026-10-19
+
+### Security
+
+- **The image ships a restrictive default `Content-Security-Policy`.** The Dockerfile now sets
+  `CONTENT_SECURITY_POLICY` to the same-origin policy below (no inline script or style, no third-party
+  origin, no plugins, no `<base>`; `frame-ancestors 'self'` matches `X-Frame-Options: SAMEORIGIN`):
+
+  ```text
+  default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'; form-action 'self'
+  ```
+
+  The Go code default stays empty, so the bare binary is unchanged, and the eleven consumer images that set
+  their own `CONTENT_SECURITY_POLICY` replace it. **Behaviour change for out-of-tree operators of the stock
+  image:** mounted content that uses inline scripts or styles, or CDN assets, is now blocked; set
+  `CONTENT_SECURITY_POLICY` to your own policy, or to an empty string to send no CSP. The built-in default
+  page loads under the policy (no inline script or style; `TestDefaultPageFitsDefaultCSP`). `CSP_NONCE` still
+  adds its nonce to `script-src`. Pinned by `TestImageDefaultCSP`, `TestBinaryCSPDefaultIsUnset` and
+  `scripts/smoke.sh` (the default header on a stock-image response, the override, and the empty-value opt-out).
+
 ## [0.1.8] - 2026-10-18
 
 ### Security
