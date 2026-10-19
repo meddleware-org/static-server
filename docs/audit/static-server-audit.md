@@ -1,6 +1,6 @@
 # Security Audit — `static-server`
 
-**Classification:** Internal security review (re-verified 2026-10-09; fix wave 2026-10-18, released and deployed as 0.1.8 on 2026-10-18; F4 resolved locally in 0.1.9 on 2026-10-19, not yet released — awaiting external review)
+**Classification:** Internal security review (re-verified 2026-10-09; fix wave 2026-10-18, released and deployed as 0.1.8 on 2026-10-18; F4 resolved in 0.1.9, released 2026-10-19 (image published and signed; not deployed directly, consumers still run their 0.1.8-based images) — awaiting external review)
 **Project:** static-server — a minimal, stdlib-only Go HTTP static file server on a `scratch` image.
 
 - **Serving.** A cascade filesystem (`SERVE_DIR` → `FALLBACK_DIR`), each root opened with `os.OpenRoot`
@@ -38,7 +38,7 @@ separately).
   2026-10-09; it was then the digest pinned in `config/images.yaml`, until 0.1.8 on 2026-10-18). Its referrers carry three Sigstore
   bundles (cosign signature, SBOM attestation, build provenance). `0.1.6` = `sha256:be51c4ee…`. quay.io
   was not queried from this sandbox; the Publish run pushed and scanned the quay.io image.
-- **Consumers (all eleven were pinned by digest to `0.1.7@sha256:2e227311…` from 2026-10-09; since 2026-10-18 all eleven are pinned to `0.1.8@sha256:e32cf42b…`):** access-gate-ui, dao-ui (retired
+- **Consumers (all eleven were pinned by digest to `0.1.7@sha256:2e227311…` from 2026-10-09 and to `0.1.8@sha256:e32cf42b…` from 2026-10-18; on `main` all eleven now pin `0.1.9@sha256:af6cc284…`, read from each repo's `Dockerfile` on GitHub 2026-10-19 — merged Dependabot docker PRs, not re-released or redeployed, so the running pods are still the 0.1.8-based images):** access-gate-ui, dao-ui (retired
   from the cluster, still published), dashboard, dev, docs, landing, seal-ui, status-page,
   token-deployer-ui, treasury-ui, walrus-ui. Every consumer Dockerfile sets `CONTENT_SECURITY_POLICY`
   and `CACHE_IMMUTABLE_PREFIX`; the SPAs set `SPA_FALLBACK=true`. Deployed images were cosign-verified
@@ -51,6 +51,15 @@ separately).
   2026-10-18 with CSP, HSTS, `nosniff`, `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy` (curl -I; the 11
   pages also loaded in headless Chromium with no console errors or CSP violations, per the release facts). Supersedes the
   0.1.7 line above, which was the deployed base from 2026-10-09 to 2026-10-18.
+- **Release `v0.1.9` (2026-10-19) = `30676d2`** (code commit `e2a9aed` plus the audit-hash commit; Publish run 39181842677
+  succeeded: Image (build and smoke test), Test, govulncheck, Trivy filesystem scan, Lint and the quay.io + Docker Hub publish
+  jobs; the best-effort self-hosted-registry job failed at login as before). The image bakes the restrictive default CSP (F4,
+  OQ2 option (c)). Digest `0.1.9@sha256:af6cc284dace0d7bcacca61765f1e5efa0681da503c607f6e13ea35ce19edc72`: the quay.io
+  manifest list (4 child manifests present, quay API 2026-10-19) and the Docker Hub tag report the same digest; it is pinned in
+  `config/images.yaml`. The cosign signature was reported verified against `docker-publish.yml@refs/tags/v` by the release
+  orchestrator; this pass did not re-run cosign. **The image is not deployed anywhere directly**; the eleven consumer images
+  `FROM` it by digest. Because each sets its own `CONTENT_SECURITY_POLICY`, rebuilding them on 0.1.9 changes nothing for them,
+  so they have not been re-released. `main` is one commit past the tag (`b566d19`, `.github/dependabot.yml` ignore rules only).
 - Consumer pods set `automountServiceAccountToken: false` (every `post-bootstrap/*/base` deployment and
   the `k8s/base` status and registry pods).
 
@@ -64,7 +73,7 @@ separately).
 - Realised ceiling: **Low** at the first pass (F1–F3) and F12 (2026-10-18), all four since RESOLVED; what
   remains open is Info.
 
-**Status:** re-verified 2026-10-09 (first pass 2026-10-03); fix wave 2026-10-18 (F5, F6, F10, F12 RESOLVED in 0.1.8; released and deployed 2026-10-18, signature verified, rollout succeeded); OQ2 decided and F4 RESOLVED in 0.1.9 (local commit, 2026-10-19; not tagged, pushed or published). The CHANGELOG records an earlier internal
+**Status:** re-verified 2026-10-09 (first pass 2026-10-03); fix wave 2026-10-18 (F5, F6, F10, F12 RESOLVED in 0.1.8; released and deployed 2026-10-18, signature verified, rollout succeeded); OQ2 decided and F4 RESOLVED in 0.1.9 (released 2026-10-19, tag `v0.1.9`; the image is published and signed, not deployed directly). The CHANGELOG records an earlier internal
 review ("audited", 2026-09-21) with no audit document in the repo; the 2026-10-03 pass was the first
 corpus-format audit.
 
@@ -81,7 +90,7 @@ corpus-format audit.
 
 | Field | Value |
 | --- | --- |
-| Images | `quay.io/meddleware-org/static-server:0.1.8@sha256:e32cf42b…4000`; `docker.io/meddleware/static-server:0.1.8@sha256:e32cf42b…4000` (released and signature-verified 2026-10-18; 0.1.7 was `sha256:2e227311…2379`); `registry.meddleware.co.uk/…` (best-effort, fails without credentials — maintainer item) |
+| Images | `quay.io/meddleware-org/static-server:0.1.9@sha256:af6cc284…edc72`; `docker.io/meddleware/static-server:0.1.9@sha256:af6cc284…edc72` (released 2026-10-19, digests read from both registries; 0.1.8 was `sha256:e32cf42b…4000`, released and signature-verified 2026-10-18; 0.1.7 was `sha256:2e227311…2379`); `registry.meddleware.co.uk/…` (best-effort, fails without credentials — maintainer item) |
 | Base images | builder `golang:1.26.9-bookworm@sha256:d9c68c2c…`; runtime `scratch` |
 | Runtime user | `USER 65534` in the Dockerfile (`nobody`, 65534:65534 via the generated `/etc/passwd`); consumer pods add `runAsNonRoot`, `runAsUser: 65534`, no privilege escalation, all capabilities dropped and `RuntimeDefault` seccomp (checked in the ten consumer deployments that run it: access-gate-ui, dashboard, dev, docs, landing, seal-ui, token-deployer-ui, treasury-ui, walrus-ui, status) |
 | Runtime FS | `/app/default` (baked), `/app/public` (operator mount or consumer `COPY`); consumer pods set `readOnlyRootFilesystem: true` |
@@ -107,7 +116,7 @@ HTTP (`httptest`). Since the 2026-10-03 pass the three Low findings were fixed a
 0.1.7), the Go toolchain advisory found on 2026-10-09 was fixed (0.1.7), and the remaining Info items
 were re-checked and given reasoned dispositions. The 2026-10-18 fix wave (0.1.8, commit `ed7c737`) closed
 F5, F6 and F10, found and fixed F12 (the 405 response lacked the security headers), and fixed the
-nonce and `Cache-Control` edge cases of F4 and F7. A second pass on 2026-10-19 (0.1.9, local) took the
+nonce and `Cache-Control` edge cases of F4 and F7. A second pass on 2026-10-19 (0.1.9, released the same day) took the
 maintainer's decision on OQ2, option (c): the image bakes in a restrictive same-origin default CSP (F4 RESOLVED).
 
 **What holds (verified):**
@@ -675,7 +684,7 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 | Runtime | `scratch` | no OS packages |
 | Image scanner | Trivy (`aquasecurity/trivy-action` v0.36.0): filesystem scan in CI; image scan in release | green in the `v0.1.7` Publish run (CRITICAL/HIGH, `ignore-unfixed`) |
 | Dependabot | `.github/dependabot.yml`: docker and github-actions, weekly, grouped | no `gomod` entry needed (no modules); builder bumps are checked by the Dockerfile toolchain assertion (F10) |
-| First-party runtime image | this is the first-party runtime image (consumers use `0.1.8@sha256:e32cf42b…`, released and deployed 2026-10-18) | all eleven consumers on `0.1.8` (Dockerfiles read 2026-10-18) |
+| First-party runtime image | this is the first-party runtime image (the current release is `0.1.9@sha256:af6cc284…`, released 2026-10-19; the deployed consumer images are still built on `0.1.8@sha256:e32cf42b…`) | all eleven consumers' `Dockerfile`s on `main` pin `0.1.9` (read from GitHub 2026-10-19); none re-released |
 
 ### B.2 Publish authority & CI
 
@@ -761,7 +770,7 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 ## Cross-project themes
 
 - **One runtime, every front end.** Header and cache semantics here are the VUE-M8 baseline for all
-  apps. F1 was fixed once for every host (all eleven consumers moved to `0.1.7`, and to `0.1.8` on 2026-10-18); F4 stays a
+  apps. F1 was fixed once for every host (all eleven consumers moved to `0.1.7`, and to `0.1.8` on 2026-10-18; on `main` they pin `0.1.9` since 2026-10-19, not yet redeployed); F4 stays a
   configuration choice that every consumer makes (CSP in each Dockerfile), now over a restrictive image default (0.1.9) that each of them replaces.
 - **Supply chain & release integrity.** No modules, so no lockfile to carry; builder pinned by digest and
   checked against the `go.mod` toolchain; actions pinned by SHA; the release runs full CI and an image scan
@@ -780,7 +789,7 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
   chain endpoint).
 - **Deployment readiness.** Section D is current; the one unticked item is the external review.
 - **Pre-v0.2 policy:** F4, F5 and F6 may change defaults without shims (F4's new image default is such a change, with the override documented). 0.1.8 was released on 2026-10-18 and
-  the consumers moved to the new base together (all eleven are on 0.1.8). The 0.1.8 changes are
+  the consumers moved to the new base together (all eleven deployed on 0.1.8; 0.1.9 was released on 2026-10-19 and the eleven `Dockerfile`s pin it on `main` without a re-release). The 0.1.8 changes are
   additive or tightening for them: the 405 gains the headers, the nonce also goes in `script-src-elem` (none
   uses it), and `PRECOMPRESSED` negotiation is stricter (none enables it).
 
@@ -878,7 +887,7 @@ per consumer is that consumer's audit; the image's own default page is served un
 ## Risks
 
 - **Blast radius:** a defect here (headers, caching, confinement) reaches every Meddleware host at
-  once. All eleven consumers are on `0.1.8`, but every fix still needs a coordinated base bump.
+  once. All eleven consumers are deployed on `0.1.8`-based images and pin `0.1.9` on `main` (not yet re-released), but every fix still needs a coordinated base bump.
 - **Implicit stdlib guarantees:** the cache safety of 404s rests on Go's error-path behaviour; since 0.1.8
   a test pins it, so a toolchain or `GODEBUG` change fails the build instead of shipping.
 - **Stdlib currency:** a new Go advisory affects every host until the next release; the release gate
@@ -960,7 +969,7 @@ per consumer is that consumer's audit; the image's own default page is served un
   - **CI `image` job:** the "not verified" item of the fix-wave entry is closed: the `image` (build and smoke test) job passed in the `v0.1.8` Publish run 39115965481 (self-hosted-registry mirror job failed at login as before, best-effort).
   - **Open items unchanged:** OQ2 (default CSP) and the external review.
 
-- 2026-10-19 — OQ2 decided by the maintainer (option (c)) and implemented as 0.1.9 (local commit; not tagged, pushed or published).
+- 2026-10-19 — OQ2 decided by the maintainer (option (c)) and implemented as 0.1.9 (local commit at the time of this entry; released later the same day, see the release entry below).
   - **Resolved:** F4 (RESOLVED, was ACCEPTED-RISK): the Dockerfile sets the restrictive same-origin default
     `CONTENT_SECURITY_POLICY`; the Go default is unchanged; all eleven consumer Dockerfiles were grepped and each sets
     `ENV CONTENT_SECURITY_POLICY="${CSP}"` from a non-empty `ARG CSP` default, so none inherits the new default.
@@ -975,8 +984,16 @@ per consumer is that consumer's audit; the image's own default page is served un
     0 issues; govulncheck v1.8.0 none (both built with and run under the `go.mod` toolchain 1.26.9); the image built
     with rootless Podman and `scripts/smoke.sh` passed; the default page loaded in headless Chrome against that
     image with `script.js` running and no CSP violation logged. Docker is unavailable here.
-  - **Orchestrator next:** tag and release 0.1.9; each of the eleven consumers keeps its own CSP, so a rebase
+  - **Orchestrator next (done, see the release entry below):** tag and release 0.1.9; each of the eleven consumers keeps its own CSP, so a rebase
     onto 0.1.9 changes nothing for them (a consumer that ever drops its `ENV` would inherit the new default).
+- 2026-10-19 — release status re-verified: **`v0.1.9` released** (tag = `30676d2`, code commit `e2a9aed`; Publish run 39181842677 green apart from the best-effort
+  self-hosted-registry job; digest `sha256:af6cc284dace0d7bcacca61765f1e5efa0681da503c607f6e13ea35ce19edc72` read from the quay API (manifest list, 4 children present)
+  and from Docker Hub; `config/images.yaml` pins the same digest).
+  - **Consumers:** the `Dockerfile` of each of the eleven consumers on GitHub `main` pins `0.1.9@sha256:af6cc284…` (merged Dependabot docker PRs, which also bumped the `node:24-slim` digest);
+    none was re-released or redeployed, because each sets its own CSP and nothing changes for them. The image itself is not deployed anywhere directly.
+  - **Not re-run here:** the cosign verification (reported by the release orchestrator against `docker-publish.yml@refs/tags/v`; cosign is not installed in this sandbox).
+  - **Findings and gates:** no change (F4 RESOLVED, OQ2 decided, pre-mainnet open only for the external review).
+  - Dependabot policy encoded in .github/dependabot.yml (majors declined); open PRs merged 2026-10-19
 - 2026-10-18 — cosign identity in the workspace script: the default identity in `bootstrap/images/verify-digests.sh` is now workflow-anchored (`^https://github\.com/meddleware-org/${name}/\.github/workflows/docker-publish\.yml@refs/tags/v`); all 16 deployed and contingency images verified valid against it (`STRICT=0 bash bootstrap/images/verify-digests.sh`). This audit has no finding for it (F3 is RESOLVED on the published command); the F3 evidence sentence is updated. Unchanged: the cluster `ClusterImagePolicy` (OQ3, platform item).
 
 ## Pre-save consistency checklist (this pass)
