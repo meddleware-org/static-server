@@ -1,7 +1,9 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
 # Base pinned by digest for reproducible builds; the tag is kept for readability.
 # To bump: docker buildx imagetools inspect golang:<go.mod toolchain>-bookworm --format '{{.Manifest.Digest}}'
-FROM golang:1.26.9-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c AS builder
+# The builder runs on the BUILD host's architecture and cross-compiles (pure Go, CGO off), so no arm64 step runs
+# under emulation. Nothing the builder executes is target-specific.
+FROM --platform=$BUILDPLATFORM golang:1.26.9-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c AS builder
 
 WORKDIR /build
 
@@ -33,10 +35,20 @@ ARG OG_URL=""
 ARG IMAGE_REF="quay.io/meddleware-org/static-server"
 ARG SCHEMA_LICENSE_URL="https://opensource.org/licenses/0BSD"
 
+# Set by BuildKit/podman from --platform; a plain builder that leaves them empty fails the guard below.
+ARG TARGETOS
+ARG TARGETARCH
+
 # Fully static binary: no libc, no CGO — runs in scratch.
 # Stripping debug info (-s -w) reduces binary size from ~10 MB to ~5 MB.
-RUN CGO_ENABLED=0 GOOS=linux \
+RUN : "${TARGETOS:?build with BuildKit or podman (sets TARGETOS)}" "${TARGETARCH:?build with BuildKit or podman (sets TARGETARCH)}" \
+    && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o server .
+
+# The compiled binary must be the target architecture (go version -m reads it without running it): an
+# image of one architecture holding another's binary would pass every other check and fail only on a node.
+RUN [ "$(go version -m /build/server | sed -n 's/^[[:space:]]*build[[:space:]]*GOARCH=//p')" = "${TARGETARCH}" ] \
+    || { echo "/build/server is not built for ${TARGETARCH}"; exit 1; }
 
 # Render the index.html template with the build-time ARG values using sed, which
 # ships in the base image — no `apt-get install`, so the build is fully

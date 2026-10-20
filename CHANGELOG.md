@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.10] - 2026-10-20
+
+### Changed
+
+- **Image build: native cross-compile, no QEMU.** The builder stage is `FROM --platform=$BUILDPLATFORM` and
+  compiles for the target with `GOOS=$TARGETOS GOARCH=$TARGETARCH` (`CGO_ENABLED=0`, `-trimpath` and the
+  ldflags unchanged), so the release no longer emulates arm64 and `docker-publish.yml` no longer has the
+  `docker/setup-qemu-action` step (a privileged binfmt step). `TARGETOS`/`TARGETARCH` have no default any more:
+  a builder that does not set them fails the build instead of silently producing the wrong architecture.
+  A build step also asserts, with `go version -m` (it reads the binary without running it), that the compiled
+  binary's `GOARCH` equals the target architecture.
+  Proof (rootless podman, builder pinned by digest): the `linux/amd64` and `linux/arm64` images built from the
+  0.1.9 sources with `VERSION=v0.1.9` are **byte-identical to the published 0.1.9** (`sha256:af6cc284…`): every
+  file of both images has the same SHA-256 (the amd64 `/server` `57a4338b…`, the arm64 `/server` `f0a421b2…`,
+  ELF aarch64). No behaviour change.
+
 ## [0.1.9] - 2026-10-19
 
 ### Security

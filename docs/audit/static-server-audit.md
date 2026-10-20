@@ -63,7 +63,7 @@ separately).
 - Consumer pods set `automountServiceAccountToken: false` (every `post-bootstrap/*/base` deployment and
   the `k8s/base` status and registry pods).
 
-**Review date:** 2026-10-03; re-verified 2026-10-09; fixes 2026-10-18
+**Review date:** 2026-10-03; re-verified 2026-10-09; fixes 2026-10-18; image build 2026-10-20 (0.1.10)
 **Reviewer:** Internal review
 **Severity ceiling:** High.
 
@@ -153,7 +153,7 @@ maintainer's decision on OQ2, option (c): the image bakes in a restrictive same-
 - **Image.**
   - Builder pinned by digest to the toolchain patch; static `CGO_ENABLED=0` binary on `scratch`;
     `USER 65534`.
-  - Multi-arch.
+  - Multi-arch, built natively: the builder cross-compiles on the build host and the release has no QEMU step (0.1.10).
   - Keyless cosign signature, SPDX SBOM attestation and GitHub build-provenance attestation (three
     Sigstore bundle referrers on the Docker Hub 0.1.7 index).
 - **CI.** golangci-lint (pinned v2.13.0), `go vet`, race tests with coverage, govulncheck (pinned
@@ -558,7 +558,7 @@ are listed); build args are set by the maintainer's CI and the Dockerfile docume
 - **Image and release.**
   - `scratch`, nonroot `65534`, a digest-pinned builder checked against the `go.mod` toolchain,
     `CGO_ENABLED=0 -trimpath -s -w`, and a `-healthcheck` mode.
-  - Multi-arch; keyless cosign, SLSA provenance (BuildKit `mode=max` + `attest-build-provenance`) and
+  - Multi-arch, built natively (cross-compiled on the build host, no QEMU, 0.1.10); keyless cosign, SLSA provenance (BuildKit `mode=max` + `attest-build-provenance`) and
     an SPDX SBOM attestation (three Sigstore bundle referrers on Docker Hub 0.1.7).
   - Consumers pin by digest.
 - **CI.** golangci-lint (pinned), vet, race, govulncheck (pinned), Trivy fs (vulns, misconfig,
@@ -669,6 +669,7 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 | A11 | The binary is built with the toolchain CI checked (IMG scan-before-sign) | `go.mod` `toolchain` + Dockerfile `grep` | build fails on mismatch; Publish run | HOLDS (F2, F11 RESOLVED) |
 | A12 | Pushed image scanned before it is signed | "Scan the published image" step before "Sign images" | Publish run steps in order | HOLDS (F9 ADJUDICATED: push precedes scan) |
 | A13 | The image builds and runs (nonroot, probes, headers) before a tag | `image` job in `go-ci.yml`, reused by `verify` | `scripts/smoke.sh` (local Podman run 2026-10-18) | HOLDS (F10 RESOLVED) |
+| A14 | A multi-arch release emulates nothing, and each platform's image holds that platform's binary | builder `FROM --platform=$BUILDPLATFORM`; `GOOS=$TARGETOS GOARCH=$TARGETARCH` with no default; a `go version -m` step asserts `GOARCH` equals the target; no `setup-qemu-action` in `docker-publish.yml` | rootless podman with no binfmt handler: both platforms built from the 0.1.9 sources and every file of both images equals the published 0.1.9 (`/server` amd64 `57a4338b…`, arm64 `f0a421b2…`, ELF aarch64) | HOLDS (0.1.10) |
 
 ---
 
@@ -829,7 +830,7 @@ five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all
 | --- | --- | --- |
 | IMG-M1 | yes (builder digest; `scratch`) | F8 |
 | IMG-M2 | yes (`.dockerignore` covers `.env*`, tests, docs, `.github`, the Makefile; selective `COPY` of `go.mod`, `*.go` and `public/`) | — |
-| IMG-M3 | yes (stdlib, no downloads; `CGO_ENABLED=0`; `sed` in the builder, no `apt-get`) | — |
+| IMG-M3 | yes (stdlib, no downloads; `CGO_ENABLED=0`; `sed` in the builder, no `apt-get`; since 0.1.10 the builder runs on the build host and cross-compiles, so the release has no QEMU or privileged binfmt step) | A14 |
 | IMG-M4 | yes (no secrets in args or layers) | front matter |
 | IMG-M5 | yes (image `USER 65534`; consumer pods enforce `runAsNonRoot`, read-only root, no escalation, dropped capabilities, `RuntimeDefault`, no service-account token) | front matter; pod specs |
 | IMG-M6 | yes for consumers (digest pins from `config/images.yaml`) | deployment status |
@@ -996,6 +997,8 @@ per consumer is that consumer's audit; the image's own default page is served un
   - Dependabot policy encoded in .github/dependabot.yml (majors declined); open PRs merged 2026-10-19
   - `docker-publish.yml`: the private rebuild jobs are replaced by one `mirror-private` job that copies the published quay.io image (and its cosign artifacts) to the self-hosted registry by digest and fails unless the digest and the signature match (build once, promote by digest; committed locally, not yet released; the `PRIVATE_REGISTRY_*` credentials are still unset).
 - 2026-10-18 — cosign identity in the workspace script: the default identity in `bootstrap/images/verify-digests.sh` is now workflow-anchored (`^https://github\.com/meddleware-org/${name}/\.github/workflows/docker-publish\.yml@refs/tags/v`); all 16 deployed and contingency images verified valid against it (`STRICT=0 bash bootstrap/images/verify-digests.sh`). This audit has no finding for it (F3 is RESOLVED on the published command); the F3 evidence sentence is updated. Unchanged: the cluster `ClusterImagePolicy` (OQ3, platform item).
+
+- 2026-10-20 — image build moved off QEMU in 0.1.10 (commit pending): the builder stage is `FROM --platform=$BUILDPLATFORM` and cross-compiles with `GOOS=$TARGETOS GOARCH=$TARGETARCH` (no default for either; the `RUN` aborts if one is empty; a `go version -m` step asserts the binary's `GOARCH` equals the target); `docker-publish.yml` has no `docker/setup-qemu-action` step, so no privileged binfmt step runs in the release. Proof with rootless podman (builder pinned by digest, no binfmt handler registered): the amd64 image built from the 0.1.9 sources equals the published 0.1.9 in every file (both architectures; the arm64 binary, `f0a421b2…`, is ELF aarch64 and equals the published one, so the QEMU build was already correct for this image: its `go build` line set no `GOARCH`). Checks: `go vet`, `go test -race` on go1.26.9, `scripts/smoke.sh` on the podman-built image. No finding changes. With this change all six Go and Node images of the fleet build natively (no emulated step remains).
 
 ## Pre-save consistency checklist (this pass)
 

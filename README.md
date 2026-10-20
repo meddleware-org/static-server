@@ -277,6 +277,10 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   -t quay.io/meddleware-org/static-server:v0.1.0 .
 ```
 
+The builder stage runs on the build host and cross-compiles for `--platform`, so a multi-platform build needs no
+QEMU emulation. It reads `TARGETOS`/`TARGETARCH` from BuildKit (the default `docker build` and `buildx`) or podman and
+fails if they are empty (the legacy builder does not set them).
+
 ### Build arguments
 
 All identifying content in the image is configurable via `--build-arg` (or Makefile variables).
