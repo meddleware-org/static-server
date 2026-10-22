@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.1.11] - 2026-10-22
+
+### Security
+
+- Go toolchain 1.26.10 (CVE-2026-111943 / GO-2026-6809: crypto/x509 accepted paths through untrusted intermediates; Trivy flags the 1.26.9 standard library in the published binary). Builder image digest updated.
+
 ## [0.1.10] - 2026-10-20
 
 ### Changed
