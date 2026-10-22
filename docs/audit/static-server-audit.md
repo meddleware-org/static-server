@@ -30,6 +30,7 @@ separately).
 
 **Deployment status:**
 
+- **2026-10-22: `v0.1.11` = `2ed0ebf` is the current release** (Go 1.26.10, F13). `v0.1.10` (2026-10-20, native cross-compile, no QEMU) precedes it. The eleven consumer images were rebuilt on 0.1.11 on 2026-10-22 (their own audits); the image is still not deployed directly.
 - Release `v0.1.7` = `e1a71c5` (2026-10-09) = HEAD of `main`; Publish run 37964221333 succeeded (full CI
   through the reusable workflow, Trivy image scan, cosign, SBOM and provenance attestations). Tags
   `v0.1.5` (never published: the release gate caught a lint finding; Docker Hub has no `0.1.5`) and
@@ -163,7 +164,7 @@ maintainer's decision on OQ2, option (c): the image bakes in a restrictive same-
   (Go 1.26.9, the `go.mod` toolchain); golangci-lint v2.13.0 0 issues; govulncheck v1.8.0 no
   vulnerabilities; `scripts/smoke.sh` passed against a rootless-Podman build of the image.
 
-**Findings and dispositions (F1–F12):** 9 RESOLVED (F1, F2, F3, F4, F5, F6, F10, F11, F12), 1 ACCEPTED-RISK
+**Findings and dispositions (F1–F13):** 10 RESOLVED (F1, F2, F3, F4, F5, F6, F10, F11, F12, F13), 1 ACCEPTED-RISK
 (F7), 1 ADJUDICATED (F9), 1 Positive (F8). None above Info is unresolved.
 
 - **F4 — CSP was off by default.** Info; RESOLVED in 0.1.9 (the nonce edge cases in 0.1.8). The maintainer
@@ -650,6 +651,21 @@ flag it. It affected every consumer.
 methodGuard → mux`. Pinned by `TestSecurityHeadersOnMethodNotAllowed` (POST, PUT, DELETE, PATCH, OPTIONS: all
 five headers and a nonce'd CSP) and by the smoke test (POST / is checked for all six headers).
 
+### F13 — Trivy flags the Go 1.26.9 standard library (CVE-2026-111943) in the published binary, though govulncheck finds it unreachable (found 2026-10-22)
+
+**Severity:** Low   **Disposition:** RESOLVED (0.1.11, commit `2ed0ebf`, 2026-10-22)
+**Where:** `go.mod` (`toolchain`), `Dockerfile` (builder `golang:<patch>-bookworm@sha256:…`), `docker-publish.yml` (scan before sign).
+
+**Issue:** CVE-2026-111943 / GO-2026-6809 (`crypto/x509` accepted certificate paths through untrusted intermediates) is fixed in Go 1.26.10. The static binary embeds the 1.26.9 standard library, so Trivy's image scan reports a HIGH finding with a fix available. `govulncheck` finds
+no reachable call into the vulnerable code (this server imports neither `crypto/tls` nor `crypto/x509`), so the code-level gate was green and the image-level gate was red.
+
+**Impact:** none for the server's behaviour (unreachable), but the scan-before-sign rule (F9) fails every release whose binary carries a fixable HIGH, and every web image built `FROM` static-server (eleven consumers) inherits the binary and its finding: a stale stdlib here would have blocked
+signing of all of them.
+
+**Remediation / evidence:** 0.1.11 bumps the toolchain to Go 1.26.10 (`go.mod`, the Dockerfile builder digest, the CI toolchain pin together; the Dockerfile fails if the builder's Go differs from the `go.mod` toolchain, F2). The gate was not weakened and no ignore entry was added. The same bump was made in
+platform-probe 0.1.9, registry-token-service 0.1.9 and registry-auth-proxy 0.1.9 (their audits). Proof: run 39764402301 for `v0.1.11` succeeded in the verify jobs (govulncheck, image build and smoke test, Trivy filesystem scan, lint, tests) and in `Publish (quay.io + Docker Hub)`, which scans the pushed image before it signs (job conclusions read with `gh`, 2026-10-22; the best-effort self-hosted-registry mirror job failed, as recorded for earlier releases). Lesson recorded: a Go patch release with a stdlib advisory is a release trigger for this image
+even when govulncheck says the code is unaffected, because the image scan reads the binary's embedded version.
+
 ---
 
 ## Section A — Invariant verification matrix
@@ -862,6 +878,7 @@ per consumer is that consumer's audit; the image's own default page is served un
    false` is set on every consumer pod; no consumer deployment mounts a volume into
    `/app/public`: the only `mountPath` in the ten consumer manifests is the status deployment's
    `/etc/platform-probe`. The question stays open for the maintainer to confirm no out-of-tree deployment does.)
+   **Decided 2026-10-22: closed. Nothing mounts into `SERVE_DIR`** (re-read: the in-tree consumer manifests mount nothing there, and the image's `/app/public` is baked at build time); an out-of-tree operator who mounts content owns that choice, and F1's confinement (`os.OpenRoot`) already bounds what a mount can expose.
 2. **OQ2** F4: should the image ship a strict default CSP, which consumers override, rather
    than none? **DECIDED 2026-10-19 by the maintainer: option (c), implemented in 0.1.9** (reason: it protects every
    stock-image deployment, including the image's own page, with no binary change, no shims, the eleven consumers
@@ -884,6 +901,7 @@ per consumer is that consumer's audit; the image's own default page is served un
 3. **OQ3** F3: does the cluster admission policy (if any) verify static-server-based images against
    a pinned identity? (2026-10-09 evidence: a `ClusterImagePolicy` exists in `warn` mode and pins the GitHub
    issuer plus any `meddleware-org` workflow; whether to enforce it, and per repository, is a platform decision.)
+   **Decided 2026-10-22: enforce the `ClusterImagePolicy` with the workflow-anchored identity** (issuer `https://token.actions.githubusercontent.com`, subject anchored to the repository's `docker-publish.yml` on `refs/tags/v*`, as F3 prints), not any `meddleware-org` workflow. It is applied from the start on the server rebuild; **it is not enforced now** (the live policy is still in `warn` mode), so F3's claim stays "the identity is printed and verifiable", not "admission enforces it".
 
 ## Risks
 
@@ -1000,14 +1018,20 @@ per consumer is that consumer's audit; the image's own default page is served un
 
 - 2026-10-20 — image build moved off QEMU in 0.1.10 (commit e39de2e): the builder stage is `FROM --platform=$BUILDPLATFORM` and cross-compiles with `GOOS=$TARGETOS GOARCH=$TARGETARCH` (no default for either; the `RUN` aborts if one is empty; a `go version -m` step asserts the binary's `GOARCH` equals the target); `docker-publish.yml` has no `docker/setup-qemu-action` step, so no privileged binfmt step runs in the release. Proof with rootless podman (builder pinned by digest, no binfmt handler registered): the amd64 image built from the 0.1.9 sources equals the published 0.1.9 in every file (both architectures; the arm64 binary, `f0a421b2…`, is ELF aarch64 and equals the published one, so the QEMU build was already correct for this image: its `go build` line set no `GOARCH`). Checks: `go vet`, `go test -race` on go1.26.9, `scripts/smoke.sh` on the podman-built image. No finding changes. With this change all six Go and Node images of the fleet build natively (no emulated step remains).
 
+- 2026-10-22 (audit close-out) — F13 added; OQ1 and OQ3 decided; release status.
+  - **F13 (new, Low, RESOLVED):** Trivy flags the Go 1.26.9 stdlib (CVE-2026-111943, HIGH, fixed in 1.26.10) in the published binary although govulncheck finds it unreachable; the scan-before-sign gate would block every web image built on static-server. Resolved by the Go 1.26.10 bump in 0.1.11 (`v0.1.11` = `2ed0ebf`).
+  - **Decided 2026-10-22:** OQ1 (nothing mounts into `SERVE_DIR`: closed), OQ3 (enforce the `ClusterImagePolicy` with the workflow-anchored identity; applied from the start on the server rebuild; not enforced now).
+  - Counts: **10 RESOLVED, 1 ACCEPTED-RISK, 1 ADJUDICATED, 1 Positive** (F1–F13). Measured/verified: `v0.1.11` tag and the CHANGELOG entry read; the Go CI and the tag's publish run history was read, not re-run; no local test run in this pass.
+
 ## Pre-save consistency checklist (this pass)
 
 - [x] Section A ↔ findings: A3 HOLDS (F1), A4 HOLDS (F12), A6 HOLDS (S1 done), A8 HOLDS (F2), A9 HOLDS (F3), A10 HOLDS (F6), A11 and A12 (F2, F11, F9), A13 (F10).
 - [x] Finding header ↔ body: consistent (F6's struck-through line records the fixed SECURITY.md item).
 - [x] Template line: base + GO + IMG + VUE (hosting rows) with the registry dates; untriggered lenses named.
 - [x] Closing four-part structure present.
-- [x] Open questions stay open.
+- [x] Open questions: OQ2 decided 2026-10-19; OQ1 and OQ3 decided 2026-10-22 (OQ3 not yet enforced).
 - [x] Section D ↔ dispositions.
 - [x] Executive summary ↔ dispositions (9 RESOLVED, 1 ACCEPTED-RISK, 1 ADJUDICATED, 1 Positive) and ceiling (High; realised Low at the first pass, Info now; F12 was Low and is RESOLVED).
 - [x] C.1 counts measured 2026-10-19 (47 tests, 93.0%).
 - [x] Re-verification log entry added.
+- [x] 2026-10-22 (close-out): F13 added to the summary counts and the log; OQ1 and OQ3 carry their decisions.
