@@ -40,8 +40,8 @@ separately).
   bundles (cosign signature, SBOM attestation, build provenance). `0.1.6` = `sha256:be51c4ee…`. quay.io
   was not queried from this sandbox; the Publish run pushed and scanned the quay.io image.
 - **Consumers (all eleven were pinned by digest to `0.1.7@sha256:2e227311…` from 2026-10-09 and to `0.1.8@sha256:e32cf42b…` from 2026-10-18; on `main` all eleven now pin `0.1.9@sha256:af6cc284…`, read from each repo's `Dockerfile` on GitHub 2026-10-19 — merged Dependabot docker PRs, not re-released or redeployed, so the running pods are still the 0.1.8-based images):** access-gate-ui, dao-ui (retired
-  from the cluster, still published), dashboard, dev, docs, landing, seal-ui, status-page,
-  token-deployer-ui, treasury-ui, walrus-ui. Every consumer Dockerfile sets `CONTENT_SECURITY_POLICY`
+  from the cluster, still published), dashboard, dev, docs, landing, sealed-storage-ui, status-ui,
+  token-issuance-ui, treasury-ui, walrus-storage-ui. Every consumer Dockerfile sets `CONTENT_SECURITY_POLICY`
   and `CACHE_IMMUTABLE_PREFIX`; the SPAs set `SPA_FALLBACK=true`. Deployed images were cosign-verified
   2026-10-09 and again 2026-10-18 (`bootstrap/images/verify-digests.sh`, 16/16 valid both times). None sets `PRECOMPRESSED`.
 - **Release `v0.1.8` (2026-10-18) = `3f1ddea`** (fix-wave commit `ed7c737` plus the audit commits), digest
@@ -93,7 +93,7 @@ corpus-format audit.
 | --- | --- |
 | Images | `quay.io/meddleware-org/static-server:0.1.9@sha256:af6cc284…edc72`; `docker.io/meddleware/static-server:0.1.9@sha256:af6cc284…edc72` (released 2026-10-19, digests read from both registries; 0.1.8 was `sha256:e32cf42b…4000`, released and signature-verified 2026-10-18; 0.1.7 was `sha256:2e227311…2379`); `registry.meddleware.co.uk/…` (best-effort, fails without credentials — maintainer item) |
 | Base images | builder `golang:1.26.9-bookworm@sha256:d9c68c2c…`; runtime `scratch` |
-| Runtime user | `USER 65534` in the Dockerfile (`nobody`, 65534:65534 via the generated `/etc/passwd`); consumer pods add `runAsNonRoot`, `runAsUser: 65534`, no privilege escalation, all capabilities dropped and `RuntimeDefault` seccomp (checked in the ten consumer deployments that run it: access-gate-ui, dashboard, dev, docs, landing, seal-ui, token-deployer-ui, treasury-ui, walrus-ui, status) |
+| Runtime user | `USER 65534` in the Dockerfile (`nobody`, 65534:65534 via the generated `/etc/passwd`); consumer pods add `runAsNonRoot`, `runAsUser: 65534`, no privilege escalation, all capabilities dropped and `RuntimeDefault` seccomp (checked in the ten consumer deployments that run it: access-gate-ui, dashboard, dev, docs, landing, sealed-storage-ui, token-issuance-ui, treasury-ui, walrus-storage-ui, status) |
 | Runtime FS | `/app/default` (baked), `/app/public` (operator mount or consumer `COPY`); consumer pods set `readOnlyRootFilesystem: true` |
 | Deployed by | consumers' images `FROM` this one by digest; digest source `config/images.yaml` |
 | Build args | `VERSION`, `VENDOR`, `DESCRIPTION`, `SOURCE_URL`, `DOCUMENTATION_URL`, `IMAGE_URL`, `SITE_*`, `OG_URL`, `IMAGE_REF`, `SCHEMA_LICENSE_URL` — labels and default-page text; no secrets |
