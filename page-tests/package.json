@@ -1,0 +1,16 @@
+{
+  "name": "static-server-page-tests",
+  "private": true,
+  "type": "module",
+  "description": "Checks of the default landing page in a real browser (axe, WCAG 2.2 AA and AAA) and with html-validate. Not part of the image.",
+  "license": "0BSD",
+  "scripts": {
+    "lint:html": "html-validate -c .htmlvalidate.json ../public/index.html",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@meddleware/frontend-config": "^0.0.1",
+    "@playwright/test": "~1.64.1",
+    "html-validate": "^11.17.0"
+  }
+}

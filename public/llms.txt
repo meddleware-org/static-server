@@ -85,7 +85,7 @@
 
     /server             — statically linked server binary
     /app/public         — SERVE_DIR mount point (empty by default; mount operator content here)
-    /app/default        — FALLBACK_DIR (baked-in default files: index.html, style.css,
+    /app/default        — FALLBACK_DIR (baked-in default files: index.html, tokens.css, style.css,
                           script.js, llms.txt, robots.txt)
 
 ## Container specification

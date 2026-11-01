@@ -50,25 +50,32 @@
     }
     </script>
 
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f7f4f1" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#120e10" media="(prefers-color-scheme: dark)" />
+    <!-- tokens.css is a generated copy of the design tokens (scripts/sync-tokens.sh); style.css uses only its roles. -->
+    <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/style.css" />
-    <script src="/script.js" defer></script>
+    <script src="/script.js"></script>
   </head>
   <body>
+    <header>
     <h1>${SITE_TITLE}</h1>
     <p>
       A minimal <a href="${SOURCE_URL}">open-source</a>
       scratch container image (~5 MB) that serves static files via a fully static Go binary.
       No OS, no shell, no external dependencies. Runs as UID 65534 (nobody).
     </p>
-    <p>
-      <span class="tag">PORT</span>
-      <span class="tag">SERVE_DIR</span>
-      <span class="tag">FALLBACK_DIR</span>
-      <span class="tag">GET /healthz</span>
-      <span class="tag">GET /version</span>
-    </p>
+    <ul class="tags">
+      <li><code>PORT</code></li>
+      <li><code>SERVE_DIR</code></li>
+      <li><code>FALLBACK_DIR</code></li>
+      <li><code>GET /healthz</code></li>
+      <li><code>GET /version</code></li>
+    </ul>
+    </header>
 
-    <hr />
+    <main>
 
     <h2>Deploying your own content</h2>
     <p>
@@ -79,7 +86,7 @@
     <p>
       This means you can mount <em>only the files you want to override</em>. For example,
       mounting only <code>index.html</code> via a ConfigMap will still serve the baked-in
-      <code>style.css</code>, <code>script.js</code>, and <code>llms.txt</code> from the fallback
+      <code>tokens.css</code>, <code>style.css</code>, <code>script.js</code>, and <code>llms.txt</code> from the fallback
       — no need to duplicate every file. Mount a full directory to replace all defaults at once.
     </p>
     <p>
@@ -87,7 +94,7 @@
       <code>index.html</code> so the server returns it for <code>/</code>.
     </p>
 
-    <pre><code># 1. Create a ConfigMap from your HTML file
+    <pre tabindex="0"><code># 1. Create a ConfigMap from your HTML file
 kubectl create configmap my-app \
   --from-file=index.html=my-page.html \
   -n my-namespace
@@ -128,7 +135,7 @@ spec:
       identifying values are <code>${VAR}</code> placeholders ready for <code>envsubst</code>.
     </p>
 
-    <pre><code>spec:
+    <pre tabindex="0"><code>spec:
   initContainers:
     - name: configure
       image: alpine:3
@@ -138,7 +145,7 @@ spec:
         - |
           apk add --no-cache gettext
           envsubst &lt; /default/index.html.tpl &gt; /public/index.html
-          cp /default/style.css /default/script.js /default/llms.txt /default/robots.txt /public/
+          cp /default/tokens.css /default/style.css /default/script.js /default/llms.txt /default/robots.txt /public/
       env:
         - name: SITE_TITLE
           value: "My App"
@@ -187,12 +194,12 @@ spec:
       use an initContainer to populate an emptyDir at startup.
     </p>
 
-    <pre><code># initContainer pattern — build into /app/public before serving
+    <pre tabindex="0"><code># initContainer pattern — build into /app/public before serving
 spec:
   initContainers:
     - name: build
       image: node:22-alpine
-      command: [sh, -c, "npm ci && npm run build && cp -r dist/* /public/"]
+      command: [sh, -c, "npm ci &amp;&amp; npm run build &amp;&amp; cp -r dist/* /public/"]
       volumeMounts:
         - name: public
           mountPath: /public
@@ -207,7 +214,7 @@ spec:
       emptyDir: {}</code></pre>
 
     <h2>Building and publishing</h2>
-    <pre><code># Using the Makefile (recommended — handles all registries + OCI labels)
+    <pre tabindex="0"><code># Using the Makefile (recommended — handles all registries + OCI labels)
 make build VERSION=v0.1.0            # local single-platform build
 make build-multi VERSION=v0.1.0      # multi-platform push to all configured registries
 
@@ -238,8 +245,9 @@ docker build \
 
     <h3>HTTP Endpoints</h3>
     <table>
+      <caption>HTTP endpoints</caption>
       <thead>
-        <tr><th>Method</th><th>Path</th><th>Status</th><th>Description</th></tr>
+        <tr><th scope="col">Method</th><th scope="col">Path</th><th scope="col">Status</th><th scope="col">Description</th></tr>
       </thead>
       <tbody>
         <tr>
@@ -283,8 +291,9 @@ docker build \
 
     <h3>Environment Variables</h3>
     <table>
+      <caption>Environment variables</caption>
       <thead>
-        <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+        <tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Description</th></tr>
       </thead>
       <tbody>
         <tr>
@@ -358,8 +367,9 @@ docker build \
       <code>/app/default/index.html.tpl</code> for initContainer use.
     </p>
     <table>
+      <caption>index.html template variables</caption>
       <thead>
-        <tr><th>Variable</th><th>Default</th><th>Used in</th></tr>
+        <tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Used in</th></tr>
       </thead>
       <tbody>
         <tr><td><code>SITE_TITLE</code></td><td><code>static-server</code></td><td><code>&lt;title&gt;</code>, <code>&lt;h1&gt;</code>, og:title, og:site_name, twitter:title, JSON-LD name</td></tr>
@@ -379,8 +389,9 @@ docker build \
     <h3>Response Headers</h3>
     <p>The first three security headers are emitted on every response; the HSTS and Permissions-Policy defaults can be switched off with an empty variable, and the rest are conditional:</p>
     <table>
+      <caption>Response headers</caption>
       <thead>
-        <tr><th>Header</th><th>Value</th></tr>
+        <tr><th scope="col">Header</th><th scope="col">Value</th></tr>
       </thead>
       <tbody>
         <tr><td><code>X-Content-Type-Options</code></td><td><code>nosniff</code> (always)</td></tr>
@@ -409,8 +420,9 @@ docker build \
 
     <h3>Container Specification</h3>
     <table>
+      <caption>Container specification</caption>
       <thead>
-        <tr><th>Property</th><th>Value</th></tr>
+        <tr><th scope="col">Property</th><th scope="col">Value</th></tr>
       </thead>
       <tbody>
         <tr><td>Base image</td><td>scratch (zero OS footprint — no shell, no package manager)</td></tr>
@@ -418,7 +430,7 @@ docker build \
         <tr><td>Exposed port</td><td>8080</td></tr>
         <tr><td>Binary</td><td><code>/server</code> (statically linked, <code>CGO_ENABLED=0</code>)</td></tr>
         <tr><td>SERVE_DIR (mount point)</td><td><code>/app/public</code> (empty by default; mount operator content here)</td></tr>
-        <tr><td>FALLBACK_DIR (baked-in defaults)</td><td><code>/app/default</code> (index.html, style.css, script.js, llms.txt, robots.txt, index.html.tpl)</td></tr>
+        <tr><td>FALLBACK_DIR (baked-in defaults)</td><td><code>/app/default</code> (index.html, tokens.css, style.css, script.js, llms.txt, robots.txt, index.html.tpl)</td></tr>
         <tr><td>Image size</td><td>~5 MB</td></tr>
         <tr><td>Platforms</td><td>linux/amd64, linux/arm64</td></tr>
         <tr><td>License</td><td>BSD Zero Clause (0BSD)</td></tr>
@@ -431,8 +443,9 @@ docker build \
       via <code>--build-arg</code>. Inspect with <code>docker inspect &lt;image&gt;</code>.
     </p>
     <table>
+      <caption>OCI image spec labels</caption>
       <thead>
-        <tr><th>Label</th><th>Default value</th></tr>
+        <tr><th scope="col">Label</th><th scope="col">Default value</th></tr>
       </thead>
       <tbody>
         <tr><td><code>title</code></td><td>static-server</td></tr>
@@ -446,11 +459,14 @@ docker build \
       </tbody>
     </table>
 
-    <hr />
+    </main>
+
+    <footer>
     <p class="footnote">
       ${SITE_TITLE} &mdash; scratch image, fully static Go binary, ~5 MB &mdash;
       <a href="${SOURCE_URL}">source</a> &mdash;
       <a href="${SOURCE_URL}/blob/main/LICENSE">0BSD</a>
     </p>
+    </footer>
   </body>
 </html>

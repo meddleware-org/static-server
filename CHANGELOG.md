@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [0.1.12] - 2026-11-01
+
+### Changed
+
+- **Default page: accessible, semantic and themed.** `index.html` has the `header`, `main` and `footer` landmarks, every table a (visually hidden) caption and `scope="col"` headers, and the variable list is a list of `<code>` items instead of styled spans. `style.css` uses only the roles of `tokens.css`, a generated copy of the design tokens (`scripts/sync-tokens.sh`, pinned in `scripts/design-tokens.version`, `--check` in CI), so the page follows the visitor's light or dark preference and keeps 7:1 text contrast (the footnote was 2.9:1). `tokens.css` is a new baked-in default file (served from `FALLBACK_DIR`, overridable like the others).
+- CI: the page is validated with html-validate and checked with axe (WCAG 2.2 AA and AAA, light and dark) in a browser against the built image.
+
 ## [0.1.11] - 2026-10-22
 
 ### Security

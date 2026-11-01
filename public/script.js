@@ -10,3 +10,13 @@
   link.href = window.location.origin + window.location.pathname;
   document.head.appendChild(link);
 })();
+
+// Follow the visitor's light/dark preference (tokens.css themes on data-theme).
+(function () {
+  var query = window.matchMedia('(prefers-color-scheme: dark)');
+  function apply() {
+    document.documentElement.setAttribute('data-theme', query.matches ? 'dark' : 'light');
+  }
+  apply();
+  query.addEventListener('change', apply);
+})();

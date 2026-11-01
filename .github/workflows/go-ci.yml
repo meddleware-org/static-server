@@ -7,8 +7,9 @@ name: Go CI
 #
 # Jobs: lint (golangci-lint), test (vet + race), vuln (govulncheck),
 #       scan (Trivy filesystem: vulnerabilities + misconfig + secrets),
-#       image (docker build + scripts/smoke.sh against the built image).
-# All five must pass. go-version-file keeps the toolchain aligned with go.mod.
+#       image (docker build + scripts/smoke.sh against the built image),
+#       page (the default landing page: tokens current, html-validate, axe in three browsers).
+# All six must pass. go-version-file keeps the toolchain aligned with go.mod.
 
 on:
   push:
@@ -37,6 +38,36 @@ jobs:
         with:
           version: v2.13.0
           args: --timeout=5m
+
+  page:
+    name: Default page (tokens, html-validate, axe)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26'
+      # public/tokens.css is a generated copy of the pinned @meddleware/design-tokens release.
+      - name: Tokens are the pinned release's
+        run: bash scripts/sync-tokens.sh --check
+      - name: Install the page tests
+        working-directory: page-tests
+        run: npm ci
+      - name: Validate the page's HTML
+        working-directory: page-tests
+        run: npm run lint:html
+      - name: Install browsers
+        working-directory: page-tests
+        run: npx playwright install --with-deps chromium firefox webkit
+      # The real server on the page with sample values (the image's sed step, as page-tests/serve.sh does it): landmarks, axe at WCAG 2.2 AA
+      # and AAA in light and dark, reflow at 320 px.
+      - name: Browser tests
+        working-directory: page-tests
+        run: npm test
 
   test:
     name: Test (vet + race)
