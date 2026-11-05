@@ -57,6 +57,10 @@ jobs:
       - name: Install the page tests
         working-directory: page-tests
         run: npm ci
+      # The page tests pull the shared frontend tooling (about nine hundred packages): the same gate every frontend repository runs.
+      - name: Audit the page tests' dependencies
+        working-directory: page-tests
+        run: npm audit --audit-level=high
       - name: Validate the page's HTML
         working-directory: page-tests
         run: npm run lint:html

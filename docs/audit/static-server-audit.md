@@ -20,6 +20,7 @@
 - AUDIT_TEMPLATE_GO.md (2026-10-08) — names static-server
 - AUDIT_TEMPLATE_IMG.md (2026-10-08) — names static-server
 - AUDIT_TEMPLATE_VUE.md (2026-10-08) — hosting-header rows only (B.VUE-1, VUE-M8); see below
+- AUDIT_TEMPLATE_A11Y.md (2026-11-01) — **◐**: the default landing page only (its checks and the token pin; F15, F16)
 
 VUE-lens hosting rules (VUE-M8, CSP and HSTS on every hosting path) are assessed as the property this
 runtime must make possible for its consumers; the rest of the VUE lens is the consumers' (their audits).
@@ -64,7 +65,7 @@ separately).
 - Consumer pods set `automountServiceAccountToken: false` (every `post-bootstrap/*/base` deployment and
   the `k8s/base` status and registry pods).
 
-**Review date:** 2026-10-03; re-verified 2026-10-09; fixes 2026-10-18; image build 2026-10-20 (0.1.10)
+**Review date:** 2026-10-03; re-verified 2026-10-09; fixes 2026-10-18; image build 2026-10-20 (0.1.10) · 0.1.11 and 0.1.12 released 2026-10-22 and 2026-11-01 — reviewed in the delta entry of 2026-11-05 (F14–F16)
 **Reviewer:** Internal review
 **Severity ceiling:** High.
 
@@ -666,6 +667,25 @@ signing of all of them.
 platform-probe 0.1.9, registry-token-service 0.1.9 and registry-auth-proxy 0.1.9 (their audits). Proof: run 39764402301 for `v0.1.11` succeeded in the verify jobs (govulncheck, image build and smoke test, Trivy filesystem scan, lint, tests) and in `Publish (quay.io + Docker Hub)`, which scans the pushed image before it signs (job conclusions read with `gh`, 2026-10-22; the best-effort self-hosted-registry mirror job failed, as recorded for earlier releases). Lesson recorded: a Go patch release with a stdlib advisory is a release trigger for this image
 even when govulncheck says the code is unaffected, because the image scan reads the binary's embedded version.
 
+### F14 — The default page's browser tests install the shared tooling (about nine hundred packages) with no audit gate and no Dependabot
+**Severity:** Low   **Disposition:** RESOLVED (CI only; no image change)
+**Where:** `page-tests/` (not part of the image); `.github/workflows/go-ci.yml` job `page`; `.github/dependabot.yml`.
+**Issue:** 0.1.12 added a CI job that serves the default page with the real server and checks it in three browsers (html-validate, axe at WCAG 2.2 AA and AAA in light and dark, landmarks, reflow). The job installs `@meddleware/frontend-config` and Playwright with `npm ci`, but ran no `npm audit`, and Dependabot covered the Go module, the Docker base and the Actions only, so the page tests' dependency tree was neither gated nor kept current.
+**Impact:** none for the image (the tests are never built into it); a vulnerable dev-tool dependency would run unreviewed in CI, with the repository's `contents: read` token only.
+**Remediation / evidence:** `go-ci.yml` runs `npm audit --audit-level=high` in `page-tests` (the gate every frontend repository runs; `npm audit` on 2026-11-05: nine moderate advisories in the lint chain, none high), and `dependabot.yml` gains an `npm` entry for `/page-tests` (weekly, grouped minor and patch, as the other frontends).
+
+### F15 — The page's accessibility test was narrower than the shared sweep
+**Severity:** Low   **Disposition:** RESOLVED (CI only)
+**Where:** `page-tests/page.spec.ts`.
+**Issue:** the page was tested with axe (AA and AAA, light and dark) and a 320 px reflow check, but not with the checks every frontend now runs: 200% text size, forced colours, reduced motion and the keyboard pass (focus visible and not obscured, WCAG 2.4.11). The page has links, so the keyboard pass has stops to check.
+**Remediation / evidence:** the spec now runs the shared `defineA11ySuite` (AA and AAA gating in ten theme × season looks — the page has no season styles, so the seasons are repeats — reflow, text size, forced colours, reduced motion, keyboard) plus the landmark test. With `@meddleware/frontend-config` 0.0.2 packed locally: 48 tests pass in Chromium, Firefox and WebKit with the CI font (2026-11-05); the earlier spec passed 12. The dependency range moves to `^0.0.2` with the release.
+
+### F16 — The page's design tokens lag the token release by design
+**Severity:** Info   **Disposition:** ADJUDICATED
+**Where:** `scripts/design-tokens.version` (0.1.12), `public/tokens.css`, `scripts/sync-tokens.sh --check` (CI).
+**Issue:** `design-tokens` 0.1.13 (2026-11-05) adds `--control-border` and the contrast gate for it. The page pins 0.1.12 and Dependabot does not track a version file.
+**Decision:** the default page has no form control and uses only roles the 0.1.12 file already provides; its text roles are the same at 7:1. Moving the pin would rebuild the image every frontend uses as its base for no change in output. The pin moves when a role the page uses changes; the CI `--check` compares the committed copy to the pinned release and stays green. Recorded so the lag is a decision, not drift.
+
 ---
 
 ## Section A — Invariant verification matrix
@@ -1022,6 +1042,7 @@ per consumer is that consumer's audit; the image's own default page is served un
   - **F13 (new, Low, RESOLVED):** Trivy flags the Go 1.26.9 stdlib (CVE-2026-111943, HIGH, fixed in 1.26.10) in the published binary although govulncheck finds it unreachable; the scan-before-sign gate would block every web image built on static-server. Resolved by the Go 1.26.10 bump in 0.1.11 (`v0.1.11` = `2ed0ebf`).
   - **Decided 2026-10-22:** OQ1 (nothing mounts into `SERVE_DIR`: closed), OQ3 (enforce the `ClusterImagePolicy` with the workflow-anchored identity; applied from the start on the server rebuild; not enforced now).
   - Counts: **10 RESOLVED, 1 ACCEPTED-RISK, 1 ADJUDICATED, 1 Positive** (F1–F13). Measured/verified: `v0.1.11` tag and the CHANGELOG entry read; the Go CI and the tag's publish run history was read, not re-run; no local test run in this pass.
+- 2026-11-05 — delta review of 0.1.11 (the 2026-10-22 close-out already covered it) and 0.1.12 (2026-11-01, the accessible and themed default page), plus the unreleased CI changes. Read `public/index.html`, `style.css`, `script.js`, `tokens.css` (a generated copy of the pinned design-tokens release), `scripts/sync-tokens.sh`, `page-tests/` and the `go-ci.yml` `page` job. The Go sources, `go.mod` and the `Dockerfile` did not change since the rename (`git diff 11d7f74..HEAD` is empty for them), so the serving findings (F1–F13) stand as last verified. The page adds no inline script beyond the existing `application/ld+json` block (data, not executed) and no inline style; `script.js` gains a `prefers-color-scheme` listener that only sets `data-theme` on `<html>`; `tokens.css` is a new baked-in default file served from `FALLBACK_DIR` and overridable like the others (the consumers' own files win). **New:** F14 (the page tests' dependency tree had no audit step and no Dependabot entry; fixed, CI only), F15 (the page's accessibility test was narrower than the shared sweep; now the shared suite), F16 (the token pin lags the token release by decision; ADJUDICATED). Ran: `go vet ./...`, `go test -race -count=1 ./...` (pass) and `govulncheck v1.8.0 ./...` (no vulnerabilities; local Go 1.27.3 standard library, the pinned toolchain is 1.26.10 — F13), `scripts/sync-tokens.sh --check` (matches 0.1.12), `npm run lint:html` (clean), and the page tests in Chromium, Firefox and WebKit with the CI font: 12 passed with the old spec, 48 with the shared sweep. Not re-run: the image build and `scripts/smoke.sh` (container build; the 0.1.12 release's own CI ran them), the consumer images' rebuild on 0.1.12 (their own audits and the deploy step). Lens check: **A11Y ◐** (the default page only; the serving code renders nothing) — recorded in the template list; GO and IMG unchanged; the VUE hosting-header rows unchanged; base and VUE dates re-cited to the 2026-11-01 registry. Counts: F14, F15 RESOLVED, F16 ADJUDICATED; earlier dispositions unchanged.
 
 ## Pre-save consistency checklist (this pass)
 
