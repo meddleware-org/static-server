@@ -16,10 +16,10 @@
 **Project type:** Go service + container image.
 **Template:**
 
-- AUDIT_TEMPLATE.md (2026-10-08)
+- AUDIT_TEMPLATE.md (2026-11-01)
 - AUDIT_TEMPLATE_GO.md (2026-10-08) — names static-server
 - AUDIT_TEMPLATE_IMG.md (2026-10-08) — names static-server
-- AUDIT_TEMPLATE_VUE.md (2026-10-08) — hosting-header rows only (B.VUE-1, VUE-M8); see below
+- AUDIT_TEMPLATE_VUE.md (2026-11-01) — hosting-header rows only (B.VUE-1, VUE-M8); see below
 - AUDIT_TEMPLATE_A11Y.md (2026-11-01) — **◐**: the default landing page only (its checks and the token pin; F15, F16)
 
 VUE-lens hosting rules (VUE-M8, CSP and HSTS on every hosting path) are assessed as the property this
