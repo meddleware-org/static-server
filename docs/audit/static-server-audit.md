@@ -800,7 +800,7 @@ even when govulncheck says the code is unaffected, because the image scan reads 
 - [x] docs discipline restored — F6 RESOLVED (0.1.8, commit `ed7c737`; every option in every reference surface, the comment slips fixed, `TestDocsListEveryOption`)
 - [x] regression test pinning "no caching headers on errors" (S1) and a container smoke test (S2, F10) — F10 RESOLVED (0.1.8, commit `ed7c737`; `TestNoCachingHeadersOnErrors`, `scripts/smoke.sh`, the `image` job in `go-ci.yml`; Podman run 2026-10-18)
 - [x] CSP default and nonce handling decided — F4 RESOLVED / OQ2 decided (2026-10-19, option (c)): the nonce handling in 0.1.8 (`script-src-elem`, `'none'`) and the restrictive image-only default CSP in 0.1.9 (commit `e2a9aed`; `TestImageDefaultCSP`, `TestDefaultPageFitsDefaultCSP`, `scripts/smoke.sh`)
-- [ ] external review — maintainer item (`OPERATOR_TASKS.md` "Funding, grants and an external audit")
+- [ ] external review (ADR-0009 gate G4: not a launch gate; covered by redeploy and the audit pass) — maintainer item (`OPERATOR_TASKS.md` "Funding, grants and an external audit")
 
 ---
 
