@@ -1186,9 +1186,9 @@ func TestPrecompressedOffNoVary(t *testing.T) {
 	}
 }
 
-// docSurfaces are the files CLAUDE.md requires every configuration option to appear in.
+// docSurfaces are the files CLAUDE.md requires every configuration option to appear in (CLAUDE.md itself carries the variable tables).
 var docSurfaces = []string{
-	"README.md", "llms.txt", "public/llms.txt", "public/index.html", ".env.example", "AGENTS.md",
+	"README.md", "llms.txt", "public/llms.txt", "public/index.html", ".env.example", "CLAUDE.md",
 }
 
 // TestDocsListEveryOption pins the documentation discipline: every environment variable that main.go
