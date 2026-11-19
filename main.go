@@ -33,6 +33,12 @@
 //	CONTENT_SECURITY_POLICY value of the Content-Security-Policy header (default: "" = unset in the
 //	                        binary; the container image sets a restrictive same-origin policy, which
 //	                        an operator replaces with their own value, or empties to send no CSP)
+//	CSP_CONNECT_SRC_EXTRA   origins added to the CSP's connect-src when the server starts, space- or
+//	                        comma-separated, each a bare https origin (https://host or https://host:port: no
+//	                        path, wildcard or quote). A deployment adds the endpoints it configures at run time
+//	                        (a Sui full node, an API) without restating the policy. Without a connect-src the
+//	                        directive is created from default-src's sources. An invalid origin, an empty
+//	                        CONTENT_SECURITY_POLICY or a connect-src of 'none' stops the server (default: "")
 //	CSP_NONCE               add a fresh 'nonce-…' to the CSP's script-src and script-src-elem on every
 //	                        response, so an edge (e.g. Cloudflare JavaScript Detections) can mark the
 //	                        inline scripts it injects; the app's own scripts stay governed by 'self'.
@@ -57,6 +63,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -65,6 +72,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -167,6 +175,12 @@ func main() {
 	}
 
 	cfg := loadConfig()
+	csp, err := withConnectSrcExtra(cfg.CSP, os.Getenv("CSP_CONNECT_SRC_EXTRA"))
+	if err != nil {
+		slog.Error("CSP_CONNECT_SRC_EXTRA", "err", err)
+		os.Exit(2)
+	}
+	cfg.CSP = csp
 
 	// Build the cascade filesystem: SERVE_DIR is always tried first. FALLBACK_DIR
 	// is appended only when non-empty so that setting FALLBACK_DIR="" completely
@@ -604,6 +618,80 @@ func secureHeaders(cfg config, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// originPattern is a bare https origin: a host of DNS labels and an optional port, nothing else. It
+// admits no path, wildcard, quote, space or ';', so an origin can only ever widen connect-src by itself.
+var originPattern = regexp.MustCompile(`^https://[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*(?::[0-9]{1,5})?$`)
+
+// withConnectSrcExtra adds the origins in extra (space- or comma-separated) to the policy's
+// connect-src. With no connect-src the directive is created from default-src's sources, so the
+// fallback the policy relied on is kept; a policy with neither already allows every connection and
+// is returned unchanged. An origin already listed is not repeated. It refuses an origin that is not a
+// bare https origin, an empty policy (there is nothing to extend) and a connect-src of 'none' (an
+// explicit "no connections" the operator must change on purpose).
+func withConnectSrcExtra(csp, extra string) (string, error) {
+	origins := strings.Fields(strings.ReplaceAll(extra, ",", " "))
+	if len(origins) == 0 {
+		return csp, nil
+	}
+	for _, o := range origins {
+		if !originPattern.MatchString(o) {
+			return "", fmt.Errorf("%q is not a bare https origin (https://host or https://host:port)", o)
+		}
+	}
+	if strings.TrimSpace(csp) == "" {
+		return "", errors.New("there is no CONTENT_SECURITY_POLICY to add the origins to")
+	}
+	parts := strings.Split(csp, ";")
+	connect, deflt := -1, -1
+	for i, p := range parts {
+		fields := strings.Fields(p)
+		if len(fields) == 0 {
+			continue
+		}
+		switch strings.ToLower(fields[0]) {
+		case "connect-src":
+			if connect < 0 {
+				connect = i
+			}
+		case "default-src":
+			if deflt < 0 {
+				deflt = i
+			}
+		}
+	}
+	add := func(sources []string) []string {
+		have := map[string]bool{}
+		for _, s := range sources {
+			have[strings.ToLower(s)] = true
+		}
+		for _, o := range origins {
+			if !have[strings.ToLower(o)] {
+				sources = append(sources, o)
+				have[strings.ToLower(o)] = true
+			}
+		}
+		return sources
+	}
+	switch {
+	case connect >= 0:
+		fields := strings.Fields(parts[connect])
+		if len(fields) == 2 && strings.EqualFold(fields[1], "'none'") {
+			return "", errors.New("connect-src is 'none'; change the policy itself to allow connections")
+		}
+		parts[connect] = " " + strings.Join(add(fields), " ")
+	case deflt >= 0:
+		fields := strings.Fields(parts[deflt])[1:]
+		if len(fields) == 1 && strings.EqualFold(fields[0], "'none'") {
+			fields = nil
+		}
+		parts = append(parts, " connect-src "+strings.Join(add(fields), " "))
+	default:
+		return csp, nil
+	}
+	out := strings.TrimSpace(strings.Join(parts, ";"))
+	return strings.TrimPrefix(out, " "), nil
 }
 
 // newNonce returns 128 random bits, base64-encoded, for a CSP nonce. A failing system RNG is

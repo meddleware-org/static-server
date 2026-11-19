@@ -6,6 +6,14 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-11-19
+
+### Added
+
+- `CSP_CONNECT_SRC_EXTRA`: origins added to the CSP's `connect-src` at start-up (each a bare https origin, checked; an
+  invalid one, an empty policy or `connect-src 'none'` stops the server), so a deployment adds the endpoints it configures
+  at run time without restating the policy.
+
 ## [0.1.12] - 2026-11-01
 
 ### Changed

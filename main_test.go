@@ -1332,3 +1332,64 @@ func TestDefaultPageFitsDefaultCSP(t *testing.T) {
 		}
 	}
 }
+
+// TestWithConnectSrcExtra covers CSP_CONNECT_SRC_EXTRA: origins join connect-src (or a connect-src made from default-src's
+// sources), are not repeated, and anything but a bare https origin, an empty policy or connect-src 'none' is refused.
+func TestWithConnectSrcExtra(t *testing.T) {
+	ok := []struct{ csp, extra, want string }{
+		{"default-src 'self'; connect-src 'self' https://a.example", "https://node.example:443",
+			"default-src 'self'; connect-src 'self' https://a.example https://node.example:443"},
+		{"default-src 'self'; connect-src 'self'", "https://b.example, https://c.example https://b.example",
+			"default-src 'self'; connect-src 'self' https://b.example https://c.example"},
+		{"default-src 'self'; connect-src 'self' https://a.example", "https://A.example",
+			"default-src 'self'; connect-src 'self' https://a.example"},
+		{"default-src 'self' https://cdn.example; img-src 'self'", "https://node.example",
+			"default-src 'self' https://cdn.example; img-src 'self'; connect-src 'self' https://cdn.example https://node.example"},
+		{"default-src 'none'; script-src 'self'", "https://node.example",
+			"default-src 'none'; script-src 'self'; connect-src https://node.example"},
+		{"img-src 'self'", "https://node.example", "img-src 'self'"},
+		{"default-src 'self'", "", "default-src 'self'"},
+		{"", "", ""},
+	}
+	for _, c := range ok {
+		got, err := withConnectSrcExtra(c.csp, c.extra)
+		if err != nil || got != c.want {
+			t.Errorf("withConnectSrcExtra(%q, %q) = %q, %v; want %q", c.csp, c.extra, got, err, c.want)
+		}
+	}
+	bad := []struct{ csp, extra string }{
+		{"default-src 'self'", "http://node.example"},
+		{"default-src 'self'", "https://node.example/path"},
+		{"default-src 'self'", "https://*.example"},
+		{"default-src 'self'", "https://node.example;script-src"},
+		{"default-src 'self'", "'unsafe-inline'"},
+		{"default-src 'self'", "https://node.example:99999999"},
+		{"default-src 'self'", "https://-bad.example"},
+		{"", "https://node.example"},
+		{"default-src 'self'; connect-src 'none'", "https://node.example"},
+	}
+	for _, c := range bad {
+		if got, err := withConnectSrcExtra(c.csp, c.extra); err == nil {
+			t.Errorf("withConnectSrcExtra(%q, %q) = %q; want an error", c.csp, c.extra, got)
+		}
+	}
+}
+
+// TestConnectSrcExtraServed checks the extended policy is the one sent.
+func TestConnectSrcExtraServed(t *testing.T) {
+	csp, err := withConnectSrcExtra("default-src 'self'; connect-src 'self'", "https://fullnode.testnet.sui.io")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, dir := newConfiguredServer(t, config{CSP: csp})
+	defer srv.Close()
+	_ = os.WriteFile(dir+"/index.html", []byte("x"), 0o644)
+	resp, err := http.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if got := resp.Header.Get("Content-Security-Policy"); got != "default-src 'self'; connect-src 'self' https://fullnode.testnet.sui.io" {
+		t.Errorf("CSP: got %q", got)
+	}
+}
