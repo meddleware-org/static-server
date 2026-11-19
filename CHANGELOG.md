@@ -8,6 +8,10 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [0.1.13] - 2026-11-19
 
+### Security
+
+- Go 1.26.11 (toolchain and builder image): fixes GO-2026-6859 in `net/http`, which govulncheck reported against 1.26.10.
+
 ### Added
 
 - `CSP_CONNECT_SRC_EXTRA`: origins added to the CSP's `connect-src` at start-up (each a bare https origin, checked; an
