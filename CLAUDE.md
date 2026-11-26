@@ -81,6 +81,9 @@ in all of the following before the task is considered complete:
 | `.env.example` | All configurable values with defaults and descriptions |
 | `.dockerignore` | Excludes build artifacts and project files from the Docker build context |
 | `.gitignore` | Standard Go gitignore |
+| `.golangci.yml` | golangci-lint v2 configuration: the default linters plus revive's `exported`, `package-comments` and `comment-spacings` (the documentation rules) |
+| `CONTRIBUTING.md` | How to build, test and propose a change |
+| `page-tests/` | Playwright and html-validate checks of the default page (`npm ci`, `npm run lint:html`, `npm test`); never part of the image |
 | `LICENSE` | BSD Zero Clause (0BSD) |
 | `SECURITY.md` | Vulnerability reporting policy |
 | `CHANGELOG.md` | Version history following Keep a Changelog format |

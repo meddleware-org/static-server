@@ -1,2 +1,4 @@
+# robots.txt of the image's default page: every crawler may fetch everything, because the default page is public documentation.
+# A deployment sets its own crawler policy per host by putting a robots.txt in SERVE_DIR, which is served before this one (the platform's per-host policy is D80).
 User-agent: *
 Allow: /

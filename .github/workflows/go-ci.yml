@@ -28,6 +28,7 @@ env:
   GOTELEMETRY: "off"
 
 jobs:
+  # Lint: golangci-lint on the module with the pinned version, so a new rule never fails a release unannounced.
   lint:
     name: Lint (golangci-lint)
     runs-on: ubuntu-latest
@@ -37,12 +38,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # Lint with the repository's golangci-lint configuration and a five minute ceiling.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.13.0
           args: --timeout=5m
 
+  # Page: the default landing page is part of the product, so it gets its own accessibility and HTML gate.
   page:
     name: Default page (tokens, html-validate, axe)
     runs-on: ubuntu-latest
@@ -77,6 +80,7 @@ jobs:
         working-directory: page-tests
         run: npm test
 
+  # Test: go vet, then the whole suite under the race detector with coverage collected from the compiled test binary.
   test:
     name: Test (vet + race)
     runs-on: ubuntu-latest
@@ -86,8 +90,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # Vet first: it is quick and its findings explain many test failures.
       - name: go vet
         run: go vet ./...
+      # Build the test binary once with the race detector and coverage, run it with a 120 s ceiling, then print per-function coverage.
       - name: go test (race + coverage)
         run: |
           go test -c -race -cover -o ./testbin .
@@ -97,6 +103,7 @@ jobs:
           go tool cover -func=coverage.out
           rm -f ./testbin
 
+  # Vulnerabilities: govulncheck reports only the advisories whose vulnerable code the binary can reach.
   vuln:
     name: Vulnerabilities (govulncheck)
     runs-on: ubuntu-latest
@@ -106,16 +113,19 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # Install the pinned scanner and run it over every package.
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.8.0  # pinned; the module checksum database verifies it
           govulncheck ./...
 
+  # Scan: Trivy over the repository files for known-vulnerable dependencies, misconfiguration and committed secrets.
   scan:
     name: Filesystem scan (Trivy)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Fail on fixable critical or high findings only (ignore-unfixed), so the gate is actionable.
       - name: Trivy filesystem scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -126,6 +136,7 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
 
+  # Image: the Dockerfile as the release builds it, run the way a cluster runs it.
   image:
     name: Image (build and smoke test)
     runs-on: ubuntu-latest
@@ -135,5 +146,6 @@ jobs:
       # the container the way a cluster does: non-root user, read-only root, no capabilities.
       - name: Build (not pushed)
         run: docker build --build-arg VERSION=smoke --tag static-server:ci .
+      # scripts/smoke.sh checks user, health, version, default page, headers and method handling in the built image.
       - name: Smoke test
         run: bash scripts/smoke.sh static-server:ci

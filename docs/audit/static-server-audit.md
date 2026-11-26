@@ -21,6 +21,8 @@
 - AUDIT_TEMPLATE_IMG.md (2026-10-08) — names static-server
 - AUDIT_TEMPLATE_VUE.md (2026-11-01) — hosting-header rows only (B.VUE-1, VUE-M8); see below
 - AUDIT_TEMPLATE_A11Y.md (2026-11-01) — **◐**: the default landing page only (its checks and the token pin; F15, F16)
+- **Added 2026-11-26 (Part B documentation pass):** AUDIT_TEMPLATE_DOCS.md (2026-11-20); AUDIT_TEMPLATE_RFC.md (2026-11-19), ●: HTTP, caching, HSTS, robots.txt, media types; AUDIT_TEMPLATE_IOP.md (2026-11-19), ●: nothing is held, the options are the contract,
+  the build and release dependencies; AUDIT_TEMPLATE_PRIV.md (2026-11-20), ●: the request log and the page's script; AUDIT_TEMPLATE_CONF.md (2026-11-26), ●: the environment options and the build-time identity values.
 
 VUE-lens hosting rules (VUE-M8, CSP and HSTS on every hosting path) are assessed as the property this
 runtime must make possible for its consumers; the rest of the VUE lens is the consumers' (their audits).
@@ -113,7 +115,7 @@ corpus-format audit.
 
 ## Executive summary
 
-`main.go` (711 lines) holds all the logic. There are 47 tests (`main_test.go`, 1334 lines) over real
+`main.go` (817 lines, 2026-11-26) holds all the logic. There are 51 tests (`main_test.go`, 1482 lines) over real
 HTTP (`httptest`). Since the 2026-10-03 pass the three Low findings were fixed and released (0.1.6 and
 0.1.7), the Go toolchain advisory found on 2026-10-09 was fixed (0.1.7), and the remaining Info items
 were re-checked and given reasoned dispositions. The 2026-10-18 fix wave (0.1.8, commit `ed7c737`) closed
@@ -688,6 +690,77 @@ even when govulncheck says the code is unaffected, because the image scan reads 
 
 ---
 
+### Part B documentation pass (2026-11-26)
+
+Scope: every tracked file read against the workspace's `docs/operations/DOCUMENTATION_STANDARD.md` and annotated (Part B Phase 1, the twenty-first repository, the first of the Go services); the DOCS, RFC,
+IOP, PRIV and CONF lenses applied for the first time. Before and after editing: `go vet`, `go test -race` (51 tests, 93.2 %), `golangci-lint` 2.15.0 (0 issues, with the new revive rules), and the page tests
+in Chromium (16 passed, `npm ci`, html-validate and axe). The documentation changes are comment-only: `main.go` changed only in F17, and the tests, workflows, scripts, stylesheet and page script changed only in comments (the two
+new tests are F17's and F19's). `scripts/smoke.sh` and the image build were not re-run (no container daemon in this sandbox; the script changed only in comments, and CI runs it).
+
+#### B.RFC-1 Standards inventory
+
+| Standard | Where | Evidence |
+| --- | --- | --- |
+| HTTP semantics, RFC 9110: GET and HEAD only, `405` with `Allow`, conditional requests and byte ranges through `net/http`, content negotiation with `q` values (`Accept-Encoding`) | `methodGuard`, `net/http`'s `ServeContent`, `acceptsEncoding` | the method, precompression and `q=0` tests (F5) |
+| Cache-Control `immutable`, RFC 8246 | `setCacheControl` under `CACHE_IMMUTABLE_PREFIX` | the cache tests; never on an error response (A6) |
+| HTTP Strict Transport Security, RFC 6797 | `STRICT_TRANSPORT_SECURITY`, on by default | the header tests and the smoke test |
+| Robots Exclusion Protocol, RFC 9309 | `public/robots.txt` (`Allow: /`) | a deployment's own file wins through the cascade (A1) |
+| Well-known URIs, RFC 8615 | `noDotfiles` hides dot-paths except `/.well-known/` | `TestDotfilesHidden` |
+| Media types, RFC 6838 | `mime` registrations at start (a scratch image has no `/etc/mime.types`), `.wasm` as `application/wasm` | `TestWasmContentType` |
+| Content Security Policy, Referrer Policy and Permissions Policy (W3C); `X-Frame-Options` (kept beside CSP `frame-ancestors`) | `secureHeaders` | the header tests |
+| `/llms.txt` (a community convention, not a standard) | `public/llms.txt` | recorded as non-final (B.RFC-2); the page works without it |
+
+**B.RFC-2 Non-final standards:** none on a core path; `llms.txt` is a convention and only a documentation aid. **B.RFC-3 Deviations:** none found.
+
+#### B.IOP Interoperability, portability and exit
+
+- **Portability and exit:** the server holds no person's data (it serves files an operator mounts), so there is nothing to export; leaving is running the same binary or any other file server over the same directories.
+- **Open API:** the whole interface is the HTTP files and `GET /healthz` and `/version`, documented in the README, `llms.txt` and the default page; the options are the environment variables, one list in the README, `.env.example`,
+  `CLAUDE.md`, both `llms.txt` and the page (`TestDocsListEveryOption` keeps them equal). No special access for our own clients: the eleven consumers use the same options.
+- **Dependencies (exit register):** the `golang` builder image (Docker Hub), quay.io, Docker Hub and the self-hosted registry (images), GitHub Actions and Sigstore (release), Trivy (scan). Every one of them is replaceable by a
+  rebuild from source with the Dockerfile; the self-hosted mirror is the exit from the public registries. Nothing is called at run time.
+- **Incentives:** no telemetry, no ads, no tracking.
+
+#### B.PRIV Privacy honoured
+
+- **Browser storage:** none. `script.js` sets one `<link>` and one attribute; nothing is read from or written to cookies, `localStorage`, `sessionStorage` or IndexedDB; no third-party request (the page loads only its own files).
+- **Logs:** one JSON line per request with the method, path (without the query string), status and elapsed time; no address, user agent, referrer, header or body. Retention is the cluster's log retention, not this
+  server's.
+- **Data held:** none. Personal data in the record of processing: no row, because the server stores nothing (the ingress and edge logs that record addresses are the platform's rows).
+
+#### B.CONF Configuration and values
+
+- **Configuration surface:** `loadConfig` and `main` read thirteen environment variables (listed in the README); `config` is the one typed value; the build-time identity values are the Dockerfile `ARG`s, the Makefile variables
+  and the release workflow's `vars.*` fallbacks.
+- **Values that can carry a credential:** `CSP_CONNECT_SRC_EXTRA` (an operator-typed list of origins that could be pasted as full URLs) and nothing else; the registry credentials are repository secrets and never reach the binary.
+- **Echo sweep (2026-11-26):** every `fmt.Errorf`, `errors.New` and `slog` call in `main.go` read. One echoed a configured value whole (F17, fixed); `slog.Warn("serve directory cannot be opened", "dir", dir)` names a
+  directory path, which is not a credential.
+- **Single source:** the identity defaults were repeated in three files with no test (F19, fixed).
+- **Validation:** `CSP_CONNECT_SRC_EXTRA` is parsed once, early, and stops the server with a message that names the variable; the other options are strings and booleans with documented defaults.
+
+### F17 — A rejected `CSP_CONNECT_SRC_EXTRA` entry was repeated whole in the start-up error
+**Severity:** Low   **Disposition:** RESOLVED (2026-11-26, unreleased)
+**Where:** `main.go` `withConnectSrcExtra` (the `%q` of the entry), logged by `main`.
+**Issue:** an entry that was not a bare https origin was quoted back in the error. An operator who pasted a full URL such as `https://user:password@host/path?key=...` would have the user name, password and key
+written to the container log (and so to whatever collects it).
+**Impact:** a credential in a log; small, because the value is operator-typed and the log is the operator's, but the log can be shipped elsewhere.
+**Remediation / evidence:** the message names the entry's position and the origin it parsed to (`describeOrigin`: scheme, host and port only; "no host" for an address without one; "no valid address" for one that does not parse), never the
+value. `TestConnectSrcExtraErrorNeverEchoesCredentials` feeds a value with a user name, password, path token and query key, and asserts none appears; 51 tests pass.
+
+### F18 — Documentation drift found by the documentation pass
+**Severity:** Low   **Disposition:** RESOLVED (2026-11-26, unreleased)
+**Where:** `README.md` (the CI table), this audit (test and line counts), the test file, the workflows, scripts and page tests; there was no `CONTRIBUTING.md`.
+**Issue:** the README's CI table did not list the `page` job; the audit's counts were three weeks old; `main_test.go` had 23 undocumented declarations and no header; the workflows, `dependabot.yml`, `.dockerignore`, the stylesheet
+and the page tests had few or no comments (the golang ignore rule did not say why); there was no `CONTRIBUTING.md` and no lint that checks doc comments.
+**Remediation / evidence:** the documents and comments are written; `.golangci.yml` turns on revive's `exported`, `package-comments` and `comment-spacings`; `check-docs` for the repository passes. `public/index.html` is
+excluded in the ledger with the reason (it is served verbatim as the default page and the deployment template, so a comment would ship to every visitor; its content is the README's and `llms.txt`'s).
+
+### F19 — The build-time identity defaults were repeated in three files with no test that they agree
+**Severity:** Low   **Disposition:** RESOLVED (2026-11-26, unreleased)
+**Where:** `Dockerfile` (`ARG`, both stages), `Makefile`, `.github/workflows/docker-publish.yml` (`vars.* ||` fallbacks).
+**Issue:** the vendor, description, source, documentation and image URLs and the page's template values had one definition in each file; a change in one would silently publish an image whose labels and page disagree with the Makefile's.
+**Remediation / evidence:** `TestIdentityDefaultsAgree` reads the three files and fails if any value differs; it passes today (each of the ten values has one default).
+
 ## Section A — Invariant verification matrix
 
 | # | Invariant (source) | Enforced at | Proven by | Status |
@@ -761,7 +834,7 @@ even when govulncheck says the code is unaffected, because the image scan reads 
 
 ## Section C — Test-coverage & hermetic/live split
 
-### C.1 Coverage grade — A (47 tests, `-race`, 93.0%; 2026-10-19)
+### C.1 Coverage grade — A (51 tests, `-race`, 93.2%; 2026-11-26)
 
 | Dimension | Assessment |
 | --- | --- |
@@ -1045,6 +1118,11 @@ per consumer is that consumer's audit; the image's own default page is served un
 - 2026-11-05 — delta review of 0.1.11 (the 2026-10-22 close-out already covered it) and 0.1.12 (2026-11-01, the accessible and themed default page), plus the unreleased CI changes. Read `public/index.html`, `style.css`, `script.js`, `tokens.css` (a generated copy of the pinned design-tokens release), `scripts/sync-tokens.sh`, `page-tests/` and the `go-ci.yml` `page` job. The Go sources, `go.mod` and the `Dockerfile` did not change since the rename (`git diff 11d7f74..HEAD` is empty for them), so the serving findings (F1–F13) stand as last verified. The page adds no inline script beyond the existing `application/ld+json` block (data, not executed) and no inline style; `script.js` gains a `prefers-color-scheme` listener that only sets `data-theme` on `<html>`; `tokens.css` is a new baked-in default file served from `FALLBACK_DIR` and overridable like the others (the consumers' own files win). **New:** F14 (the page tests' dependency tree had no audit step and no Dependabot entry; fixed, CI only), F15 (the page's accessibility test was narrower than the shared sweep; now the shared suite), F16 (the token pin lags the token release by decision; ADJUDICATED). Ran: `go vet ./...`, `go test -race -count=1 ./...` (pass) and `govulncheck v1.8.0 ./...` (no vulnerabilities; local Go 1.27.3 standard library, the pinned toolchain is 1.26.10 — F13), `scripts/sync-tokens.sh --check` (matches 0.1.12), `npm run lint:html` (clean), and the page tests in Chromium, Firefox and WebKit with the CI font: 12 passed with the old spec, 48 with the shared sweep. Not re-run: the image build and `scripts/smoke.sh` (container build; the 0.1.12 release's own CI ran them), the consumer images' rebuild on 0.1.12 (their own audits and the deploy step). Lens check: **A11Y ◐** (the default page only; the serving code renders nothing) — recorded in the template list; GO and IMG unchanged; the VUE hosting-header rows unchanged; base and VUE dates re-cited to the 2026-11-01 registry. Counts: F14, F15 RESOLVED, F16 ADJUDICATED; earlier dispositions unchanged.
 - 2026-11-07 — mainnet-readiness sweep, local re-check (no code change): `govulncheck ./...` (rebuilt with Go 1.27.3 so it matches the toolchain) reports no vulnerabilities, and `golangci-lint run ./...` (2.15.0, the repository's configuration) reports 0 issues. This closes the "not run locally" rows for the Go checks. No finding changed.
 
+- 2026-11-26 — Part B documentation pass and first application of the DOCS, RFC, IOP, PRIV and CONF lenses (above, "Part B documentation pass"). Baseline before editing: `go vet`, `go test -race` (50 tests), the page tests. Every tracked
+  file annotated to the documentation standard (`public/index.html` excluded with its reason); `CONTRIBUTING.md` and `.golangci.yml` added; README CI table and CLAUDE.md layout updated. Found and fixed **F17** (a rejected
+  `CSP_CONNECT_SRC_EXTRA` entry repeated whole), **F18** (documentation drift) and **F19** (identity defaults repeated without a test). Re-run after editing: `go vet`, `go test -race` (51 tests, 93.2 %), golangci-lint 2.15.0 (0 issues),
+  the page tests (16 passed in Chromium); the diff is comment-only apart from F17's code and the two new tests. Counts: F1 to F19.
+
 ## Pre-save consistency checklist (this pass)
 
 - [x] Section A ↔ findings: A3 HOLDS (F1), A4 HOLDS (F12), A6 HOLDS (S1 done), A8 HOLDS (F2), A9 HOLDS (F3), A10 HOLDS (F6), A11 and A12 (F2, F11, F9), A13 (F10).
@@ -1057,3 +1135,4 @@ per consumer is that consumer's audit; the image's own default page is served un
 - [x] C.1 counts measured 2026-10-19 (47 tests, 93.0%).
 - [x] Re-verification log entry added.
 - [x] 2026-10-22 (close-out): F13 added to the summary counts and the log; OQ1 and OQ3 carry their decisions.
+- [x] 2026-11-26 (Part B pass): F17 to F19 added with the DOCS, RFC, IOP, PRIV and CONF lenses in the Template line; counts F1 to F19.

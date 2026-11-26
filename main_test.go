@@ -1,3 +1,6 @@
+// Tests for static-server: they start the real handler stack on httptest servers and make real HTTP requests (no mocks), over temporary
+// directories for the cascade, plus subprocess tests for the paths that call os.Exit. Run with go test -race ./... (CI does).
+
 package main
 
 import (
@@ -24,15 +27,25 @@ const subprocessKey = "STATIC_SERVER_SUBPROCESS"
 // statErrFile implements http.File; Stat always errors, all other methods are no-ops.
 type statErrFile struct{}
 
-func (statErrFile) Close() error                         { return nil }
-func (statErrFile) Read(_ []byte) (int, error)           { return 0, io.EOF }
-func (statErrFile) Seek(_ int64, _ int) (int64, error)   { return 0, nil }
+// Close does nothing: the stub holds no resource.
+func (statErrFile) Close() error { return nil }
+
+// Read reports end of file at once: the stub has no content.
+func (statErrFile) Read(_ []byte) (int, error) { return 0, io.EOF }
+
+// Seek succeeds without moving: the stub has no content.
+func (statErrFile) Seek(_ int64, _ int) (int64, error) { return 0, nil }
+
+// Readdir lists nothing: the stub is not a directory.
 func (statErrFile) Readdir(_ int) ([]os.FileInfo, error) { return nil, nil }
-func (statErrFile) Stat() (os.FileInfo, error)           { return nil, errors.New("injected stat error") }
+
+// Stat always fails, which is the one behaviour the stub exists to inject.
+func (statErrFile) Stat() (os.FileInfo, error) { return nil, errors.New("injected stat error") }
 
 // statErrFS is an http.FileSystem whose Open always returns a statErrFile.
 type statErrFS struct{}
 
+// Open returns the failing file for every path.
 func (statErrFS) Open(_ string) (http.File, error) { return statErrFile{}, nil }
 
 // newHandler is defined in main.go and shared by the server and the tests, so the
@@ -72,6 +85,7 @@ func newCascadeTestServer(t *testing.T) (*httptest.Server, string, string) {
 	return srv, primary, fallback
 }
 
+// TestHealthz checks the probe endpoint answers 200.
 func TestHealthz(t *testing.T) {
 	srv, _ := newTestServer(t)
 	defer srv.Close()
@@ -86,6 +100,7 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+// TestVersion checks /version answers 200.
 func TestVersion(t *testing.T) {
 	srv, _ := newTestServer(t)
 	defer srv.Close()
@@ -100,6 +115,7 @@ func TestVersion(t *testing.T) {
 	}
 }
 
+// TestVersionContentType checks the version is served as plain text, not sniffed as HTML.
 func TestVersionContentType(t *testing.T) {
 	srv, _ := newTestServer(t)
 	defer srv.Close()
@@ -116,6 +132,7 @@ func TestVersionContentType(t *testing.T) {
 	}
 }
 
+// TestServeIndex checks / serves index.html from the serve directory.
 func TestServeIndex(t *testing.T) {
 	srv, dir := newTestServer(t)
 	defer srv.Close()
@@ -134,6 +151,7 @@ func TestServeIndex(t *testing.T) {
 	}
 }
 
+// TestMissingFile checks an absent path is a plain 404.
 func TestMissingFile(t *testing.T) {
 	srv, _ := newTestServer(t)
 	defer srv.Close()
@@ -148,6 +166,7 @@ func TestMissingFile(t *testing.T) {
 	}
 }
 
+// TestDirectoryWithoutIndex checks a directory with no index.html is a 404, not a listing (safeDir).
 func TestDirectoryWithoutIndex(t *testing.T) {
 	srv, dir := newTestServer(t)
 	defer srv.Close()
@@ -166,6 +185,7 @@ func TestDirectoryWithoutIndex(t *testing.T) {
 	}
 }
 
+// TestDirectoryWithIndex checks a directory that has an index.html serves it.
 func TestDirectoryWithIndex(t *testing.T) {
 	srv, dir := newTestServer(t)
 	defer srv.Close()
@@ -187,6 +207,7 @@ func TestDirectoryWithIndex(t *testing.T) {
 	}
 }
 
+// TestSecurityHeaders checks the three always-on headers on a normal page.
 func TestSecurityHeaders(t *testing.T) {
 	srv, dir := newTestServer(t)
 	defer srv.Close()
@@ -212,6 +233,7 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+// TestSecureHeadersOnHealthz checks the probe endpoint carries the headers too, because they wrap the whole mux.
 func TestSecureHeadersOnHealthz(t *testing.T) {
 	srv, _ := newTestServer(t)
 	defer srv.Close()
@@ -227,6 +249,7 @@ func TestSecureHeadersOnHealthz(t *testing.T) {
 	}
 }
 
+// TestEnvOr checks a set variable wins and an unset one falls back.
 func TestEnvOr(t *testing.T) {
 	t.Setenv("TEST_KEY", "custom")
 	if got := envOr("TEST_KEY", "default"); got != "custom" {
@@ -237,6 +260,7 @@ func TestEnvOr(t *testing.T) {
 	}
 }
 
+// TestEnvBool checks the accepted spellings of true and false and the fallback for an unset variable.
 func TestEnvBool(t *testing.T) {
 	for _, v := range []string{"1", "true", "TRUE", "yes", "on"} {
 		t.Setenv("B", v)
@@ -589,6 +613,7 @@ func TestPrecompressed(t *testing.T) {
 
 // ── Cascade filesystem tests ──────────────────────────────────────────────────
 
+// TestCascadePrimaryServed checks a file present only in the primary directory is served.
 func TestCascadePrimaryServed(t *testing.T) {
 	srv, primary, _ := newCascadeTestServer(t)
 	defer srv.Close()
@@ -607,6 +632,7 @@ func TestCascadePrimaryServed(t *testing.T) {
 	}
 }
 
+// TestCascadeFallbackServed checks a file present only in the fallback directory is served.
 func TestCascadeFallbackServed(t *testing.T) {
 	// index.html only in fallback; primary is empty.
 	srv, _, fallback := newCascadeTestServer(t)
@@ -626,6 +652,7 @@ func TestCascadeFallbackServed(t *testing.T) {
 	}
 }
 
+// TestCascadePrimaryOverridesFallback checks the primary directory wins when both hold the path.
 func TestCascadePrimaryOverridesFallback(t *testing.T) {
 	// Same path exists in both; primary must win.
 	srv, primary, fallback := newCascadeTestServer(t)
@@ -648,6 +675,7 @@ func TestCascadePrimaryOverridesFallback(t *testing.T) {
 	}
 }
 
+// TestCascadePartialOverlay checks the partial-overlay feature: one file from the primary, the rest from the fallback.
 func TestCascadePartialOverlay(t *testing.T) {
 	// index.html in primary; style.css only in fallback.
 	srv, primary, fallback := newCascadeTestServer(t)
@@ -681,6 +709,7 @@ func TestCascadePartialOverlay(t *testing.T) {
 	}
 }
 
+// TestCascadeNotFoundInEither checks a path in neither directory is a 404.
 func TestCascadeNotFoundInEither(t *testing.T) {
 	srv, _, _ := newCascadeTestServer(t)
 	defer srv.Close()
@@ -924,6 +953,7 @@ func serveRooted(t *testing.T, dir string) *httptest.Server {
 	return httptest.NewServer(newHandler(config{}, cascadeFS{rootedFS(dir)}))
 }
 
+// getStatus fetches a URL and returns its status code, closing the body.
 func getStatus(t *testing.T, url string) int {
 	t.Helper()
 	resp, err := http.Get(url)
@@ -1371,6 +1401,63 @@ func TestWithConnectSrcExtra(t *testing.T) {
 	for _, c := range bad {
 		if got, err := withConnectSrcExtra(c.csp, c.extra); err == nil {
 			t.Errorf("withConnectSrcExtra(%q, %q) = %q; want an error", c.csp, c.extra, got)
+		}
+	}
+}
+
+// TestIdentityDefaultsAgree keeps one value for each build-time identity default across the files that
+// repeat it (CONF lens, single source): the Dockerfile's ARG lines (both stages), the Makefile's variables
+// and the release workflow's fallbacks must name the same repository, image, vendor and description.
+func TestIdentityDefaultsAgree(t *testing.T) {
+	read := func(name string) string {
+		b, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	dockerfile, makefile, workflow := read("Dockerfile"), read("Makefile"), read(".github/workflows/docker-publish.yml")
+	names := []string{"VENDOR", "DESCRIPTION", "SOURCE_URL", "DOCUMENTATION_URL", "IMAGE_URL", "SITE_TITLE", "SITE_KEYWORDS", "SITE_AUTHOR_URL", "IMAGE_REF", "SCHEMA_LICENSE_URL"}
+	// Values per name, per file: every occurrence in a file must be equal to every other, in every file.
+	for _, name := range names {
+		got := map[string]string{} // value -> where it was found
+		for _, m := range regexp.MustCompile(`(?m)^ARG `+name+`="([^"]*)"`).FindAllStringSubmatch(dockerfile, -1) {
+			got[m[1]] = "Dockerfile"
+		}
+		if m := regexp.MustCompile(`(?m)^` + name + `\s*\?=\s*(.*)$`).FindStringSubmatch(makefile); m != nil {
+			got[strings.ReplaceAll(strings.TrimSpace(m[1]), `\#`, "#")] = "Makefile"
+		}
+		if m := regexp.MustCompile(`vars\.` + name + ` \|\| '([^']*)'`).FindStringSubmatch(workflow); m != nil {
+			got[m[1]] = "docker-publish.yml"
+		}
+		if len(got) != 1 {
+			t.Errorf("%s has %d different defaults across the Dockerfile, Makefile and release workflow: %v", name, len(got), got)
+		}
+	}
+}
+
+// TestConnectSrcExtraErrorNeverEchoesCredentials checks a rejected origin is named by its host only: a
+// value with a user name, password, path token and query key must reach no part of the message.
+func TestConnectSrcExtraErrorNeverEchoesCredentials(t *testing.T) {
+	cases := []struct{ extra, want string }{
+		{"https://user:s3cret@node.example/tok3n?key=k3y", "entry 1 is not a bare https origin (https://host or https://host:port); it names https://node.example"},
+		{"https://ok.example https://user:s3cret@", "entry 2 is not a bare https origin (https://host or https://host:port); it names no host"},
+		{"s3cret-without-a-scheme", "entry 1 is not a bare https origin (https://host or https://host:port); it names no host"},
+		{"https://us:s3cret@[::1", "entry 1 is not a bare https origin (https://host or https://host:port); it names no valid address"},
+	}
+	for _, c := range cases {
+		_, err := withConnectSrcExtra("default-src 'self'", c.extra)
+		if err == nil {
+			t.Fatalf("withConnectSrcExtra(%q): want an error", c.extra)
+		}
+		msg := err.Error()
+		if msg != c.want {
+			t.Errorf("message %q, want %q", msg, c.want)
+		}
+		for _, secret := range []string{"user", "s3cret", "tok3n", "k3y"} {
+			if strings.Contains(msg, secret) {
+				t.Errorf("message %q repeats %q", msg, secret)
+			}
 		}
 	}
 }

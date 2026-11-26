@@ -33,14 +33,17 @@ if [ -z "$engine" ]; then
   fi
 fi
 
+# fail <message>: print the message to stderr and stop the run with status 1.
 fail() {
   echo "smoke test FAILED: $*" >&2
   exit 1
 }
 
+# The image must declare a non-root user: a cluster that forces runAsNonRoot would otherwise reject it.
 user="$("$engine" image inspect --format '{{.Config.User}}' "$image")"
 [ "$user" = "65534" ] || fail "image runs as '${user}', want 65534"
 
+# A scratch directory for response headers and bodies, removed on exit.
 work="$(mktemp -d)"
 csp="default-src 'self'; script-src 'self'"
 cid="$("$engine" run -d --rm --read-only --cap-drop ALL --security-opt no-new-privileges \
@@ -66,7 +69,8 @@ require_header() {
   v="$(header "$1")"
   [[ "$v" =~ $2 ]] || fail "$3 $4: header $1 is '${v}', want match for $2"
 }
-security_headers() { # <label> <path>
+# security_headers <label> <path>: the headers every response must carry (nosniff, frame, referrer, HSTS, permissions, CSP with a nonce).
+security_headers() {
   require_header X-Content-Type-Options '^nosniff$' "$1" "$2"
   require_header X-Frame-Options '^SAMEORIGIN$' "$1" "$2"
   require_header Referrer-Policy '^strict-origin-when-cross-origin$' "$1" "$2"

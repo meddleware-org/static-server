@@ -69,6 +69,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -635,9 +636,11 @@ func withConnectSrcExtra(csp, extra string) (string, error) {
 	if len(origins) == 0 {
 		return csp, nil
 	}
-	for _, o := range origins {
+	for i, o := range origins {
 		if !originPattern.MatchString(o) {
-			return "", fmt.Errorf("%q is not a bare https origin (https://host or https://host:port)", o)
+			// The entry is named by its position and origin only: a rejected value can carry a user name,
+			// password or key (https://user:pass@host/?key=...) that must not reach the log (CONF lens).
+			return "", fmt.Errorf("entry %d is not a bare https origin (https://host or https://host:port); it names %s", i+1, describeOrigin(o))
 		}
 	}
 	if strings.TrimSpace(csp) == "" {
@@ -692,6 +695,21 @@ func withConnectSrcExtra(csp, extra string) (string, error) {
 	}
 	out := strings.TrimSpace(strings.Join(parts, ";"))
 	return strings.TrimPrefix(out, " "), nil
+}
+
+// describeOrigin names a configured address for an error message without repeating anything that can
+// carry a credential: only its scheme, host and port are returned. An address that does not parse is
+// reported as "no valid address" and one with no host (a bare word, mailto:, a lone scheme) as
+// "no host", so a mistyped secret is never echoed back.
+func describeOrigin(v string) string {
+	u, err := url.Parse(v)
+	if err != nil {
+		return "no valid address"
+	}
+	if u.Scheme == "" || u.Host == "" {
+		return "no host"
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // newNonce returns 128 random bits, base64-encoded, for a CSP nonce. A failing system RNG is

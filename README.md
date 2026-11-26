@@ -320,7 +320,7 @@ The raw template is preserved at `/app/default/index.html.tpl` inside the image 
 
 | Workflow | Trigger | Action |
 | -------- | ------- | ------ |
-| `go-ci.yml` | push, pull_request, and called by the release | golangci-lint, `go vet` + `go test -race`, govulncheck, Trivy filesystem scan, and an image job that builds the image and runs `scripts/smoke.sh` against it |
+| `go-ci.yml` | push, pull_request, and called by the release | golangci-lint, `go vet` + `go test -race`, govulncheck, Trivy filesystem scan, a `page` job (the default page's tokens, html-validate and axe in three browsers), and an image job that builds the image and runs `scripts/smoke.sh` against it |
 | `docker-publish.yml` | tag push `v*` | runs `go-ci.yml`, then multi-platform build + push to quay.io and Docker Hub (scanned, cosign-signed, SBOM and provenance attested) and a best-effort copy of the same image (by digest, no rebuild) to the self-hosted registry |
 
 See [`.github/workflows/`](.github/workflows/) for the full workflow YAML. Registry credentials
@@ -333,7 +333,7 @@ and org coordinates are GitHub repository variables/secrets — no YAML edits ne
 - The root filesystem is intended to be mounted read-only (`readOnlyRootFilesystem: true`).
 - No writable paths inside the container are required at runtime.
 
-To report a vulnerability, see [SECURITY.md](SECURITY.md).
+To report a vulnerability, see [SECURITY.md](SECURITY.md). To build, test and propose a change, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Licence
 

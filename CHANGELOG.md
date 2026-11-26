@@ -6,6 +6,19 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A rejected `CSP_CONNECT_SRC_EXTRA` entry is named in the start-up error by its position and host only, never repeated whole: an entry written as
+  `https://user:password@host/?key=...` no longer puts its credentials in the log.
+
+### Added
+
+- `CONTRIBUTING.md`, and a `.golangci.yml` that turns on revive's documentation rules (`exported`, `package-comments`, `comment-spacings`) in CI.
+
+### Changed
+
+- Line-level comments on the workflows, scripts, page tests, stylesheet and tests; no behaviour change.
+
 ## [0.1.13] - 2026-11-19
 
 ### Security

@@ -1,7 +1,9 @@
 /* static-server default page. Every colour, space and type size is a role from tokens.css (a generated copy of @meddleware/design-tokens,
    scripts/sync-tokens.sh), so the page follows light/dark and keeps the tokens' 7:1 text contrast. */
 
+/* The page column: a readable measure (46rem) centred, with the type, colours and spacing taken from the tokens. */
 body {
+  /* One column, centred; side padding keeps text off the screen edge at 320px. */
   font-family: var(--mw-font-sans, system-ui, -apple-system, sans-serif);
   max-width: 46rem;
   margin: var(--space-lg) auto;
@@ -11,35 +13,45 @@ body {
   line-height: var(--leading-relaxed);
 }
 
+/* Heading rhythm: the title sits close to the tagline below it, sections open with space above. */
 h1 { margin-bottom: var(--space-3xs); }
+
+/* Section headings: the h2 opens a section, the h3 a reference table, so the h3 is body-sized and bold only. */
 h2 { margin-top: var(--space-md); }
 h3 { margin-top: var(--space-sm); font-size: 1em; }
 
+/* Body text uses the text role, never a literal colour, so dark mode and the contrast guarantee follow the tokens. */
 p, li { color: var(--text); }
 
+/* Links use the accent role; the focus ring below is the shared 2px outline so keyboard focus is always visible. */
 a { color: var(--accent); }
 a:focus-visible, summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
+/* Inline code: a raised chip, wrapped anywhere so a long variable name or URL never forces a horizontal scroll at 320px. */
 code {
   background: var(--lift);
   color: var(--text);
   padding: 0.125em 0.45em;
+  /* A small radius from the token scale, so the chip and the block share one corner language. */
   border-radius: var(--radius-xs);
   font-family: var(--mw-font-mono, ui-monospace, monospace);
   font-size: 0.88em;
   overflow-wrap: anywhere;
 }
 
+/* Code blocks scroll sideways rather than wrapping, because wrapped YAML or shell loses its meaning. */
 pre {
   background: var(--lift);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--space-xs) var(--space-sm);
+  /* The block scrolls in place (and takes keyboard focus below) instead of widening the page. */
   overflow-x: auto;
   font-size: 0.85em;
   line-height: 1.55;
 }
 
+/* The chip styling is for inline code only: inside a block the code takes the block's surface. */
 pre code {
   background: none;
   padding: 0;
@@ -48,6 +60,7 @@ pre code {
 /* A scrolling code block or table is reachable by keyboard. */
 pre:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
+/* Reference tables span the column; their text is a little smaller than body text so the long descriptions stay compact. */
 table {
   width: 100%;
   border-collapse: collapse;
@@ -61,26 +74,31 @@ caption {
   width: 1px;
   height: 1px;
   overflow: hidden;
+  /* The visually-hidden recipe: 1px, clipped, absolutely positioned, so the caption stays in the accessibility tree. */
   clip-path: inset(50%);
   white-space: nowrap;
 }
 
+/* Cells wrap anywhere for the same reason as inline code (long values and URLs). */
 th, td {
   overflow-wrap: anywhere;
 }
 
+/* Header cells: left aligned with a rule beneath, no background, so the table reads in forced-colours mode too. */
 th {
   text-align: left;
   border-bottom: 1px solid var(--border);
   padding: var(--space-3xs) var(--space-2xs);
 }
 
+/* Body cells: top aligned because the description column is much taller than the others. */
 td {
   border-bottom: 1px solid var(--border);
   padding: var(--space-3xs) var(--space-2xs);
   vertical-align: top;
 }
 
+/* The list of variables and endpoints in the page header: a wrapping row of chips instead of a bulleted list. */
 .tags {
   display: flex;
   flex-wrap: wrap;
@@ -90,17 +108,20 @@ td {
   list-style: none;
 }
 
+/* The rule between the deployment guide and the API reference. */
 hr {
   border: none;
   border-top: 1px solid var(--border);
   margin: var(--space-md) 0;
 }
 
+/* The footer is separated from the content by a rule and the same spacing step as the sections. */
 footer {
   border-top: 1px solid var(--border);
   margin-top: var(--space-md);
 }
 
+/* The footnote is quiet text, still above the contrast floor (the muted role is chosen for 7:1). */
 .footnote {
   font-size: 0.8em;
   color: var(--muted);

@@ -1,2 +1,4 @@
+# Installed dependencies of the page tests (restored by npm ci).
 node_modules/
+# Playwright's per-run output: traces, screenshots and the last-run record.
 test-results/
