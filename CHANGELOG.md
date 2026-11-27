@@ -6,6 +6,8 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-11-27
+
 ### Fixed
 
 - A rejected `CSP_CONNECT_SRC_EXTRA` entry is named in the start-up error by its position and host only, never repeated whole: an entry written as
