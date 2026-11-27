@@ -58,6 +58,10 @@ in all of the following before the task is considered complete:
 
 `TestDocsListEveryOption` enforces this for every environment variable read in `main.go`, across `README.md`, both `llms.txt`, `public/index.html`, `.env.example` and this file.
 
+## Documentation rules (workspace documentation standard, D144)
+
+Every file has a header and every identifier a doc comment that starts with its name (the `revive` rules in `.golangci.yml` enforce the exported ones in CI); line comments say why. `node scripts/check-docs.mjs --report static-server` (in the workspace repository) is the gate. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## What not to do
 
 - Do not add `require` stanzas to `go.mod`.
